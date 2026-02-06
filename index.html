@@ -1,0 +1,1019 @@
+<!--
+    KittenNote
+    Copyright (C) 2026 Author of KittenNote
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="description" content="KittenNote - 跨平台PWA笔记软件">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="KittenNote">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="assets/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/themes.css">
+    <link rel="stylesheet" href="css/editor.css">
+    <link rel="stylesheet" href="css/ink-editor.css">
+    <title>KittenNote</title>
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img src="icons/icon-256.png" alt="KittenNote" class="logo-icon">
+                    <span>KittenNote</span>
+                </div>
+                <button id="toggle-sidebar" class="btn-icon" title="收起侧边栏">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+            </div>
+            
+            <div class="sidebar-actions">
+                <button id="new-folder" class="btn btn-secondary" title="新建文件夹">
+                    <i class="fas fa-folder-plus"></i>
+                    <span>新建文件夹</span>
+                </button>
+                <button id="new-notebook" class="btn btn-primary" title="新建笔记本">
+                    <i class="fas fa-book"></i>
+                    <span>新建笔记本</span>
+                </button>
+            </div>
+            <div class="sidebar-actions">
+                <button id="import-files" class="btn btn-secondary btn-full" title="导入文件">
+                    <i class="fas fa-file-import"></i>
+                    <span>导入文件</span>
+                </button>
+            </div>
+            
+            <div class="sidebar-search">
+                <input type="text" id="search-input" placeholder="搜索笔记...">
+                <i class="fas fa-search"></i>
+            </div>
+            
+            <div id="directory-tree" class="directory-tree">
+                <!-- Directory tree will be rendered here -->
+            </div>
+            
+            <div class="sidebar-footer">
+                <button id="sync-btn" class="btn-icon" title="同步">
+                    <i class="fas fa-sync"></i>
+                </button>
+                <button id="settings-btn" class="btn-icon" title="设置">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main id="main-content" class="main-content">
+            <!-- Welcome Screen (shown when no note is selected) -->
+            <div id="welcome-screen" class="welcome-screen">
+                <div class="welcome-content">
+                    <img src="icons/icon-256.png" alt="KittenNote" class="welcome-icon">
+                    <h1>欢迎使用 KittenNote</h1>
+                    <p>选择一个笔记开始编辑，或创建新的笔记</p>
+                    <div class="welcome-actions">
+                        <button id="quick-new-text" class="btn btn-primary">
+                            <i class="fas fa-file-alt"></i>
+                            新建文字笔记
+                        </button>
+                        <button id="quick-new-ink" class="btn btn-secondary">
+                            <i class="fas fa-pen-fancy"></i>
+                            新建墨迹笔记
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Editor Container -->
+            <div id="editor-container" class="editor-container hidden">
+                <!-- Editor Header -->
+                <div class="editor-header">
+                    <div class="note-info">
+                        <input type="text" id="note-title" class="note-title-input" placeholder="笔记标题">
+                        <span id="note-type-badge" class="note-type-badge">文字</span>
+                        <span id="save-status" class="save-status saved">✓ 已保存</span>
+                    </div>
+                    <div class="editor-actions">
+                        <button id="undo-btn" class="btn-icon" title="撤销 (Ctrl+Z)">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button id="redo-btn" class="btn-icon" title="重做 (Ctrl+Y)">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                        <button id="save-btn" class="btn-icon" title="保存 (Ctrl+S)">
+                            <i class="fas fa-save"></i>
+                        </button>
+                        <button id="export-btn" class="btn-icon" title="导出">
+                            <i class="fas fa-file-export"></i>
+                        </button>
+                        <div class="dropdown" id="export-dropdown">
+                            <button class="btn-icon dropdown-toggle" title="导出选项">
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <div class="dropdown-menu">
+                                <button data-format="md">导出为 Markdown</button>
+                                <button data-format="ktnt">导出为 KTNT</button>
+                                <button data-format="pdf">导出为 PDF</button>
+                                <button data-format="png">导出为 PNG</button>
+                                <button data-format="zip">导出整个笔记本</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Text Editor Toolbar -->
+                <div id="text-toolbar" class="toolbar text-toolbar">
+                    <div class="toolbar-group">
+                        <button id="bold-btn" class="btn-tool" title="加粗 (Ctrl+B)">
+                            <i class="fas fa-bold"></i>
+                        </button>
+                        <button id="italic-btn" class="btn-tool" title="斜体 (Ctrl+I)">
+                            <i class="fas fa-italic"></i>
+                        </button>
+                        <button id="underline-btn" class="btn-tool" title="下划线 (Ctrl+U)">
+                            <i class="fas fa-underline"></i>
+                        </button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button id="heading-btn" class="btn-tool" title="标题">
+                            <i class="fas fa-heading"></i>
+                        </button>
+                        <button id="list-btn" class="btn-tool" title="列表">
+                            <i class="fas fa-list"></i>
+                        </button>
+                        <button id="quote-btn" class="btn-tool" title="引用">
+                            <i class="fas fa-quote-right"></i>
+                        </button>
+                    </div>
+                    <div class="toolbar-group text-colors">
+                        <button class="color-swatch" data-text-color="#212121" title="黑色"></button>
+                        <button class="color-swatch" data-text-color="#4CAF50" title="绿色"></button>
+                        <button class="color-swatch" data-text-color="#2196F3" title="蓝色"></button>
+                        <button class="color-swatch" data-text-color="#9C27B0" title="紫色"></button>
+                        <button class="color-swatch" data-text-color="#FF9800" title="橙色"></button>
+                        <button class="color-swatch" data-text-color="#F44336" title="红色"></button>
+                    </div>
+                    <div class="toolbar-group">
+                        <label class="nes-toggle" title="NES 智能建议">
+                            <input type="checkbox" id="nes-toggle">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label"><i class="fas fa-magic nes-status-icon" title="NES"></i> NES</span>
+                        </label>
+                    </div>
+                    <div class="toolbar-group">
+                        <span id="text-font-size" class="font-size-indicator">16px</span>
+                    </div>
+                </div>
+                
+                <!-- Ink Editor Toolbar -->
+                <div id="ink-toolbar" class="toolbar ink-toolbar hidden">
+                    <div class="toolbar-group tools">
+                        <button id="move-tool" class="btn-tool" data-tool="move" title="移动 (M)">
+                            <i class="fas fa-maximize"></i>
+                        </button>
+                        <button id="pen-tool" class="btn-tool active" data-tool="pen" title="画笔 (B)">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <button id="highlighter-tool" class="btn-tool" data-tool="highlighter" title="荧光笔 (H)">
+                            <i class="fas fa-highlighter"></i>
+                        </button>
+                        <button id="eraser-tool" class="btn-tool" data-tool="eraser" title="橡皮擦 (E)">
+                            <i class="fas fa-eraser"></i>
+                        </button>
+                        <button id="select-tool" class="btn-tool" data-tool="select" title="套索选择 (V)">
+                            <i class="fas fa-draw-polygon"></i>
+                        </button>
+                    </div>
+                    <div class="toolbar-group shapes">
+                        <button id="line-tool" class="btn-tool" data-tool="line" title="直线 (L)">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <button id="rect-tool" class="btn-tool" data-tool="rectangle" title="矩形 (R)">
+                            <i class="far fa-square"></i>
+                        </button>
+                        <button id="circle-tool" class="btn-tool" data-tool="circle" title="圆形 (C)">
+                            <i class="far fa-circle"></i>
+                        </button>
+                        <button id="arrow-tool" class="btn-tool" data-tool="arrow" title="箭头 (A)">
+                            <i class="fas fa-play"></i>
+                        </button>
+                    </div>
+                    <div class="toolbar-group colors">
+                        <input type="color" id="stroke-color" value="#000000" title="笔画颜色">
+                        <input type="range" id="stroke-width" min="1" max="20" value="3" title="笔画粗细">
+                        <span id="stroke-width-value">3px</span>
+                        <div class="quick-colors">
+                            <button class="quick-color" data-ink-color="#000000" style="background:#000000"></button>
+                            <button class="quick-color" data-ink-color="#4CAF50" style="background:#4CAF50"></button>
+                            <button class="quick-color" data-ink-color="#2196F3" style="background:#2196F3"></button>
+                            <button class="quick-color" data-ink-color="#9C27B0" style="background:#9C27B0"></button>
+                            <button class="quick-color" data-ink-color="#FF9800" style="background:#FF9800"></button>
+                            <button class="quick-color" data-ink-color="#F44336" style="background:#F44336"></button>
+                        </div>
+                    </div>
+                    <div class="toolbar-group">
+                        <button id="reset-view" class="btn-tool" title="复位视图">
+                            <i class="fas fa-home"></i>
+                        </button>
+                        <button id="clear-canvas" class="btn-tool" title="清空画布">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Text Editor -->
+                <div id="text-editor" class="editor-area">
+                    <div id="text-content" class="text-content" contenteditable="true" spellcheck="false"></div>
+                    <div id="nes-suggestion" class="nes-suggestion hidden"></div>
+                </div>
+
+                <!-- Markdown Source Editor -->
+                <div id="md-source-editor" class="editor-area hidden">
+                    <div class="md-source-header">
+                        <span>Markdown 源代码</span>
+                        <button id="md-source-back" class="btn-icon" title="返回可视化编辑">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                    </div>
+                    <textarea id="md-source-textarea" class="md-source-textarea" spellcheck="false"></textarea>
+                </div>
+                
+                <!-- Ink Editor -->
+                <div id="ink-editor" class="editor-area hidden">
+                    <canvas id="ink-canvas-bg" class="ink-canvas bg-layer"></canvas>
+                    <canvas id="ink-canvas-main" class="ink-canvas main-layer"></canvas>
+                    <canvas id="ink-canvas-ui" class="ink-canvas ui-layer"></canvas>
+                    <div id="ink-scrollbar-h" class="ink-scrollbar horizontal">
+                        <div class="scrollbar-thumb"></div>
+                    </div>
+                    <div id="ink-scrollbar-v" class="ink-scrollbar vertical">
+                        <div class="scrollbar-thumb"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content settings-modal-content">
+            <div class="modal-header">
+                <h2>设置</h2>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body settings-body">
+                <div class="settings-tabs">
+                    <button class="settings-tab active" data-tab="appearance">外观</button>
+                    <button class="settings-tab" data-tab="drawing">绘制</button>
+                    <button class="settings-tab" data-tab="sync">同步</button>
+                    <button class="settings-tab" data-tab="backup">备份与恢复</button>
+                    <button class="settings-tab" data-tab="nes">AI 助手</button>
+                    <button class="settings-tab" data-tab="shortcuts">快捷键</button>
+                    <button class="settings-tab" data-tab="developer">开发</button>
+                    <button class="settings-tab" data-tab="about">关于</button>
+                </div>
+
+                <div class="settings-content">
+                
+                <!-- Appearance Settings -->
+                <div class="settings-panel active" id="appearance-panel">
+                    <div class="setting-item">
+                        <label>主题模式</label>
+                        <div class="theme-switcher">
+                            <button class="theme-option" data-theme="auto">
+                                <i class="fas fa-adjust"></i>
+                                自动
+                            </button>
+                            <button class="theme-option" data-theme="light">
+                                <i class="fas fa-sun"></i>
+                                浅色
+                            </button>
+                            <button class="theme-option" data-theme="dark">
+                                <i class="fas fa-moon"></i>
+                                深色
+                            </button>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label>强调色</label>
+                        <div class="color-palettes accent-grid">
+                            <!-- Greens -->
+                            <button class="color-palette" data-accent="green" style="--palette-color: #4CAF50" title="青草绿"></button>
+                            <button class="color-palette" data-accent="emerald" style="--palette-color: #10B981" title="祖母绿"></button>
+                            <button class="color-palette" data-accent="mint" style="--palette-color: #00BFA5" title="薄荷绿"></button>
+                            <button class="color-palette" data-accent="lime" style="--palette-color: #84CC16" title="青柠"></button>
+                            <button class="color-palette" data-accent="olive" style="--palette-color: #6B8E23" title="橄榄"></button>
+                            <button class="color-palette" data-accent="forest" style="--palette-color: #228B22" title="森林"></button>
+                            <!-- Blues -->
+                            <button class="color-palette" data-accent="blue" style="--palette-color: #2196F3" title="天空蓝"></button>
+                            <button class="color-palette" data-accent="cobalt" style="--palette-color: #3B82F6" title="钴蓝"></button>
+                            <button class="color-palette" data-accent="ocean" style="--palette-color: #0EA5E9" title="海洋"></button>
+                            <button class="color-palette" data-accent="indigo" style="--palette-color: #6366F1" title="靛蓝"></button>
+                            <button class="color-palette" data-accent="navy" style="--palette-color: #1E3A8A" title="藏青"></button>
+                            <button class="color-palette" data-accent="teal" style="--palette-color: #009688" title="青色"></button>
+                            <!-- Purples -->
+                            <button class="color-palette" data-accent="purple" style="--palette-color: #9C27B0" title="紫罗兰"></button>
+                            <button class="color-palette" data-accent="violet" style="--palette-color: #8B5CF6" title="堇紫"></button>
+                            <button class="color-palette" data-accent="lavender" style="--palette-color: #A78BFA" title="薰衣草"></button>
+                            <button class="color-palette" data-accent="plum" style="--palette-color: #A855F7" title="梅子"></button>
+                            <button class="color-palette" data-accent="grape" style="--palette-color: #7C3AED" title="葡萄"></button>
+                            <button class="color-palette" data-accent="orchid" style="--palette-color: #DA70D6" title="兰花"></button>
+                            <!-- Reds/Pinks -->
+                            <button class="color-palette" data-accent="pink" style="--palette-color: #E91E63" title="玫红"></button>
+                            <button class="color-palette" data-accent="rose" style="--palette-color: #F43F5E" title="玫瑰"></button>
+                            <button class="color-palette" data-accent="coral" style="--palette-color: #FF6B6B" title="珊瑚"></button>
+                            <button class="color-palette" data-accent="crimson" style="--palette-color: #DC2626" title="绯红"></button>
+                            <button class="color-palette" data-accent="cherry" style="--palette-color: #BE185D" title="樱桃"></button>
+                            <button class="color-palette" data-accent="magenta" style="--palette-color: #D946EF" title="洋红"></button>
+                            <!-- Oranges/Yellows -->
+                            <button class="color-palette" data-accent="orange" style="--palette-color: #FF9800" title="活力橙"></button>
+                            <button class="color-palette" data-accent="tangerine" style="--palette-color: #F97316" title="橘子"></button>
+                            <button class="color-palette" data-accent="amber" style="--palette-color: #F59E0B" title="琥珀"></button>
+                            <button class="color-palette" data-accent="gold" style="--palette-color: #EAB308" title="金色"></button>
+                            <button class="color-palette" data-accent="rust" style="--palette-color: #C2410C" title="铁锈"></button>
+                            <button class="color-palette" data-accent="peach" style="--palette-color: #FB923C" title="蜜桃"></button>
+                            <!-- Neutrals -->
+                            <button class="color-palette" data-accent="slate" style="--palette-color: #64748B" title="石板"></button>
+                            <button class="color-palette" data-accent="charcoal" style="--palette-color: #374151" title="炭灰"></button>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label>建议配色</label>
+                        <div class="preset-themes">
+                            <button class="preset-theme" data-preset="campus"><span class="preset-preview campus"></span>青春校园</button>
+                            <button class="preset-theme" data-preset="ocean"><span class="preset-preview ocean"></span>海洋深邃</button>
+                            <button class="preset-theme" data-preset="sunset"><span class="preset-preview sunset"></span>日落余晖</button>
+                            <button class="preset-theme" data-preset="forest"><span class="preset-preview forest"></span>森林静谧</button>
+                            <button class="preset-theme" data-preset="lavender"><span class="preset-preview lavender"></span>薰衣草田</button>
+                            <button class="preset-theme" data-preset="cherry"><span class="preset-preview cherry"></span>樱花盛开</button>
+                            <button class="preset-theme" data-preset="autumn"><span class="preset-preview autumn"></span>秋日私语</button>
+                            <button class="preset-theme" data-preset="mint"><span class="preset-preview mint"></span>薄荷清新</button>
+                            <button class="preset-theme" data-preset="coral"><span class="preset-preview coral"></span>珊瑚橙梦</button>
+                            <button class="preset-theme" data-preset="night"><span class="preset-preview night"></span>星空夜幕</button>
+                            <button class="preset-theme" data-preset="peach"><span class="preset-preview peach"></span>蜜桃甜心</button>
+                            <button class="preset-theme" data-preset="tropical"><span class="preset-preview tropical"></span>热带雨林</button>
+                            <button class="preset-theme" data-preset="rose"><span class="preset-preview rose"></span>玫瑰花园</button>
+                            <button class="preset-theme" data-preset="sage"><span class="preset-preview sage"></span>鼠尾草绿</button>
+                            <button class="preset-theme" data-preset="arctic"><span class="preset-preview arctic"></span>北极冰川</button>
+                            <button class="preset-theme" data-preset="burgundy"><span class="preset-preview burgundy"></span>勃艮第酒</button>
+                            <button class="preset-theme" data-preset="teal"><span class="preset-preview teal"></span>青绿湖水</button>
+                            <button class="preset-theme" data-preset="plum"><span class="preset-preview plum"></span>梅子紫雾</button>
+                            <button class="preset-theme" data-preset="sand"><span class="preset-preview sand"></span>沙漠金沙</button>
+                            <button class="preset-theme" data-preset="slate"><span class="preset-preview slate"></span>石板灰影</button>
+                            <button class="preset-theme" data-preset="crimson"><span class="preset-preview crimson"></span>深红绯梦</button>
+                            <button class="preset-theme" data-preset="lime"><span class="preset-preview lime"></span>青柠檬酸</button>
+                            <button class="preset-theme" data-preset="indigo"><span class="preset-preview indigo"></span>靛蓝深邃</button>
+                            <button class="preset-theme" data-preset="tangerine"><span class="preset-preview tangerine"></span>橘子活力</button>
+                            <button class="preset-theme" data-preset="orchid"><span class="preset-preview orchid"></span>兰花优雅</button>
+                            <button class="preset-theme" data-preset="navy"><span class="preset-preview navy"></span>海军蓝调</button>
+                            <button class="preset-theme" data-preset="amber"><span class="preset-preview amber"></span>琥珀暖阳</button>
+                            <button class="preset-theme" data-preset="grape"><span class="preset-preview grape"></span>葡萄紫甜</button>
+                            <button class="preset-theme" data-preset="emerald"><span class="preset-preview emerald"></span>祖母绿宝</button>
+                            <button class="preset-theme" data-preset="rust"><span class="preset-preview rust"></span>铁锈复古</button>
+                            <button class="preset-theme" data-preset="cobalt"><span class="preset-preview cobalt"></span>钴蓝科技</button>
+                            <button class="preset-theme" data-preset="magenta"><span class="preset-preview magenta"></span>洋红璀璨</button>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label>日志悬浮窗</label>
+                        <div class="setting-toggle">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="log-overlay-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="setting-hint">在屏幕上显示调试日志（适合移动端）</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sync Settings -->
+                <div class="settings-panel hidden" id="sync-panel">
+                    <div class="setting-item">
+                        <label>同步</label>
+                        <span class="setting-hint">同步请使用主界面左下角的同步按钮进行操作。</span>
+                    </div>
+                </div>
+
+                <!-- Backup Settings -->
+                <div class="settings-panel hidden" id="backup-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-archive"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>备份与恢复</h4>
+                            <p>KittenNote 是自由软件，为了隐私，数据不存储在云端。请定期备份全部数据。</p>
+                        </div>
+                    </div>
+                    <div class="backup-grid">
+                        <div class="backup-card">
+                            <h5>一键备份</h5>
+                            <p>导出包含所有笔记、设置、同步记录和模型数据的离线包。</p>
+                            <button id="backup-export-btn" class="btn btn-primary">
+                                <i class="fas fa-download"></i>
+                                立即备份下载
+                            </button>
+                            <div class="backup-meta">上次备份：<span id="backup-last">未备份</span></div>
+                        </div>
+                        <div class="backup-card">
+                            <h5>恢复备份</h5>
+                            <p>导入备份文件会覆盖当前数据，建议先清理浏览器后再恢复。</p>
+                            <input type="file" id="backup-import-input" accept=".zip" hidden>
+                            <button id="backup-import-btn" class="btn btn-secondary">
+                                <i class="fas fa-file-import"></i>
+                                导入备份文件
+                            </button>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label>备份提醒间隔（天）</label>
+                        <div class="backup-interval">
+                            <input type="number" id="backup-interval-days" class="setting-input" min="1" max="30" value="3">
+                            <span class="setting-hint">默认 3 天。首次使用也会提示你如何调整。</span>
+                        </div>
+                    </div>
+                    <div class="backup-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>清理浏览器之前请务必先备份，清理完成后再恢复。</span>
+                    </div>
+                </div>
+                
+                <!-- Drawing Settings -->
+                <div class="settings-panel hidden" id="drawing-panel">
+                    <div class="drawing-grid">
+                        <div class="drawing-card">
+                            <div class="drawing-card-header">
+                                <div>
+                                    <h4>压感绘制</h4>
+                                    <span class="setting-hint">启用后笔画粗细随压力变化</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="variable-width-toggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="drawing-card">
+                            <div class="drawing-card-header">
+                                <div>
+                                    <h4>采样间隔</h4>
+                                    <span class="setting-hint">0=最高精度，越高越省性能</span>
+                                </div>
+                            </div>
+                            <div class="drawing-card-body">
+                                <div class="sampling-setting">
+                                    <input type="range" id="pressure-sampling" min="0" max="50" value="0" step="5">
+                                    <span id="pressure-sampling-value">关闭</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="drawing-card wide">
+                            <div class="drawing-card-header">
+                                <div>
+                                    <h4>压感测试</h4>
+                                    <span class="setting-hint">在下方区域测试压感笔</span>
+                                </div>
+                            </div>
+                            <div class="drawing-card-body">
+                                <div class="pressure-test-area">
+                                    <canvas id="pressure-test-canvas" width="300" height="150"></canvas>
+                                    <div class="pressure-info">
+                                        <span>压力: <span id="pressure-value">0.00</span></span>
+                                        <span>预估粗细: <span id="estimated-width">2px</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="drawing-card">
+                            <div class="drawing-card-header">
+                                <div>
+                                    <h4>平滑处理</h4>
+                                    <span class="setting-hint">让笔迹更自然顺滑</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="smoothing-toggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="drawing-card">
+                            <div class="drawing-card-header">
+                                <div>
+                                    <h4>自动矫直</h4>
+                                    <span class="setting-hint">接近直线时自动矫正</span>
+                                </div>
+                            </div>
+                            <div class="drawing-card-body">
+                                <div class="straightening-threshold">
+                                    <input type="range" id="straightening-threshold" min="5" max="30" value="15" step="1">
+                                    <span id="straightening-value">15°</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- NES Settings -->
+                <div class="settings-panel hidden" id="nes-panel">
+                    <div class="setting-item">
+                        <label>推理模式</label>
+                        <select id="nes-mode" class="setting-select">
+                            <option value="api">API（OpenAI格式）</option>
+                            <option value="local" disabled>本地模型（暂不可用）</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Local Model Settings -->
+                    <div id="nes-local-settings">
+                        <div class="setting-item">
+                            <span class="setting-hint">本地模型为实验性功能，稳定性不保证，建议优先使用 API 模式。</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>模型状态</label>
+                            <div class="model-status">
+                                <p>状态: <span id="model-status">未下载</span></p>
+                                <p>大小: <span id="model-size">约 400MB</span></p>
+                            </div>
+                        </div>
+                        <div class="setting-item">
+                            <label>内置模型</label>
+                            <div class="model-download">
+                                <button id="download-model-btn" class="btn btn-primary">
+                                    <i class="fas fa-download"></i>
+                                    下载模型
+                                </button>
+                                <div id="download-progress" class="progress-bar hidden">
+                                    <div class="progress-fill"></div>
+                                    <span class="progress-text">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-item">
+                            <label>自定义模型</label>
+                            <div class="custom-model-upload">
+                                <button id="import-custom-model-btn" class="btn btn-secondary">
+                                    <i class="fas fa-folder-open"></i>
+                                    导入ONNX模型目录
+                                </button>
+                                <span class="setting-hint">需要包含model.onnx、tokenizer.json等文件</span>
+                                <div id="custom-model-info" class="custom-model-info hidden">
+                                    <span id="custom-model-name"></span>
+                                    <button id="remove-custom-model-btn" class="btn-icon" title="移除自定义模型">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="setting-item">
+                            <label>推理后端</label>
+                            <select id="nes-backend" class="setting-select">
+                                <option value="cpu">CPU（WASM）</option>
+                                <option value="webgpu">WebGPU（实验性）</option>
+                            </select>
+                            <span class="setting-hint">WebGPU 需要浏览器支持，可能不稳定</span>
+                        </div>
+                    </div>
+                    
+                    <!-- API Settings -->
+                    <div id="nes-api-settings" class="hidden">
+                        <div class="setting-item">
+                            <label>API 地址</label>
+                            <input type="text" id="nes-api-url" class="setting-input" 
+                                placeholder="https://api.openai.com/v1/chat/completions">
+                        </div>
+                        <div class="setting-item">
+                            <label>API Key</label>
+                            <input type="password" id="nes-api-key" class="setting-input" 
+                                placeholder="sk-...">
+                        </div>
+                        <div class="setting-item">
+                            <label>模型名称</label>
+                            <input type="text" id="nes-api-model" class="setting-input" 
+                                placeholder="gpt-3.5-turbo">
+                        </div>
+                        <div class="setting-item">
+                            <button id="test-api-btn" class="btn btn-secondary">
+                                <i class="fas fa-plug"></i>
+                                测试连接
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label>触发延迟</label>
+                        <div class="nes-delay-setting">
+                            <input type="range" id="nes-delay" min="500" max="2000" value="800" step="100">
+                            <span id="nes-delay-value">800ms</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Shortcuts Settings -->
+                <div class="settings-panel hidden" id="shortcuts-panel">
+                    <div class="shortcuts-list">
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">保存</span>
+                            <span class="shortcut-keys">Ctrl + S</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">撤销</span>
+                            <span class="shortcut-keys">Ctrl + Z</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">重做</span>
+                            <span class="shortcut-keys">Ctrl + Y</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">加粗</span>
+                            <span class="shortcut-keys">Ctrl + B</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">斜体</span>
+                            <span class="shortcut-keys">Ctrl + I</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">下划线</span>
+                            <span class="shortcut-keys">Ctrl + U</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">画笔工具</span>
+                            <span class="shortcut-keys">B</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">橡皮擦工具</span>
+                            <span class="shortcut-keys">E</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">荧光笔工具</span>
+                            <span class="shortcut-keys">H</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">矩形工具</span>
+                            <span class="shortcut-keys">R</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">圆形工具</span>
+                            <span class="shortcut-keys">C</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">箭头工具</span>
+                            <span class="shortcut-keys">A</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">套索选择</span>
+                            <span class="shortcut-keys">V</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">移动工具</span>
+                            <span class="shortcut-keys">M</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-action">接受建议</span>
+                            <span class="shortcut-keys">Tab</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Developer Settings -->
+                <div class="settings-panel hidden" id="developer-panel">
+                    <div class="settings-group">
+                        <h3><i class="fas fa-code"></i> 开发者工具</h3>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label>Service Worker 管理</label>
+                                <span class="setting-description">注销当前注册的 Service Worker 并清除所有缓存</span>
+                            </div>
+                            <button id="unregister-sw-btn" class="btn-secondary" style="white-space:nowrap">
+                                <i class="fas fa-trash-alt"></i> 注销 SW
+                            </button>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label>清除所有数据</label>
+                                <span class="setting-description">删除 IndexedDB 中的所有笔记、文件夹和设置数据（不可恢复）</span>
+                            </div>
+                            <button id="clear-all-data-btn" class="btn-secondary btn-danger-outline" style="white-space:nowrap">
+                                <i class="fas fa-exclamation-triangle"></i> 清除数据
+                            </button>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label>设备 ID</label>
+                                <span class="setting-description" id="dev-device-id">加载中...</span>
+                            </div>
+                            <button id="copy-device-id-btn" class="btn-secondary" style="white-space:nowrap">
+                                <i class="fas fa-copy"></i> 复制
+                            </button>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label>缓存版本</label>
+                                <span class="setting-description" id="dev-cache-version">加载中...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- About Settings -->
+                <div class="settings-panel hidden" id="about-panel">
+                    <div class="about-content">
+                        <div class="about-logo">
+                            <img src="icons/icon-256.png" alt="KittenNote" class="about-logo-icon">
+                        </div>
+                        <h3>KittenNote</h3>
+                        <p class="version">版本1 第1次更新</p>
+                        <p class="description">一款支持文字和墨迹编辑的跨平台PWA笔记软件</p>
+                        <div class="about-features">
+                            <p><i class="fas fa-check"></i> 离线优先，本地存储</p>
+                            <p><i class="fas fa-check"></i> 局域网P2P同步</p>
+                            <p><i class="fas fa-check"></i> 本地AI智能建议</p>
+                            <p><i class="fas fa-check"></i> 端到端加密</p>
+                        </div>
+                        <div class="about-license">
+                            <h4>许可证</h4>
+                            <p>GNU GPL v3.0</p>
+                            <p>Author of KittenNote</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="log-overlay" class="log-overlay hidden">
+        <div class="log-overlay-header">
+            <span>调试日志</span>
+            <div class="log-overlay-actions">
+                <button id="log-overlay-export" class="btn-icon" title="导出日志">
+                    <i class="fas fa-file-export"></i>
+                </button>
+                <button id="log-overlay-clear" class="btn-icon" title="清空日志">
+                    <i class="fas fa-broom"></i>
+                </button>
+                <button id="log-overlay-close" class="btn-icon" title="关闭日志悬浮窗">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div id="log-overlay-body" class="log-overlay-body"></div>
+    </div>
+    
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu hidden">
+        <button data-action="rename"><i class="fas fa-edit"></i> 重命名</button>
+        <button data-action="delete"><i class="fas fa-trash"></i> 删除</button>
+        <button data-action="new-note"><i class="fas fa-file-alt"></i> 新建文字笔记</button>
+        <button data-action="new-ink"><i class="fas fa-pen-fancy"></i> 新建墨迹笔记</button>
+        <button data-action="notebook-settings"><i class="fas fa-sliders-h"></i> 笔记本设置</button>
+        <button data-action="auto-title"><i class="fas fa-heading"></i> AI 自动标题</button>
+        <button data-action="export"><i class="fas fa-file-export"></i> 导出</button>
+    </div>
+
+    <!-- Editor Context Menu -->
+    <div id="editor-context-menu" class="context-menu hidden">
+        <button data-action="cut"><i class="fas fa-scissors"></i> 剪切</button>
+        <button data-action="copy"><i class="fas fa-copy"></i> 复制</button>
+        <button data-action="paste"><i class="fas fa-paste"></i> 粘贴</button>
+        <button data-action="edit-md"><i class="fas fa-code"></i> 编辑MD源代码</button>
+    </div>
+
+    <!-- Notebook Settings Modal -->
+    <div id="notebook-settings-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2>笔记本设置</h2>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label>底纹</label>
+                    <select id="notebook-pattern" class="setting-select">
+                        <option value="blank">空白</option>
+                        <option value="lines">横线</option>
+                        <option value="grid">方格</option>
+                        <option value="dots">点阵</option>
+                        <option value="calligraphy">四线三行</option>
+                        <option value="staff">五线谱</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label>底色</label>
+                    <div class="color-palettes">
+                        <button class="color-palette" data-bg-color="#ffffff" style="--palette-color:#ffffff"></button>
+                        <button class="color-palette" data-bg-color="#fdf6e3" style="--palette-color:#fdf6e3"></button>
+                        <button class="color-palette" data-bg-color="#f5f5f5" style="--palette-color:#f5f5f5"></button>
+                        <button class="color-palette" data-bg-color="#eef7ff" style="--palette-color:#eef7ff"></button>
+                        <button class="color-palette" data-bg-color="#f6f0ff" style="--palette-color:#f6f0ff"></button>
+                        <button class="color-palette" data-bg-color="#fff2e6" style="--palette-color:#fff2e6"></button>
+                    </div>
+                    <input type="color" id="notebook-bg-color" class="color-input" value="#ffffff">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="notebook-settings-cancel" class="btn btn-secondary">取消</button>
+                <button id="notebook-settings-apply" class="btn btn-primary">应用</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Import Dialog -->
+    <div id="import-dialog" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>导入文件</h2>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="import-section">
+                    <p class="import-hint">选择 .md 或 .ktnt 文件导入到指定笔记本</p>
+                    <input type="file" id="import-file-input" accept=".md,.ktnt,.zip" multiple style="display: none;">
+                    <button id="import-select-files" class="btn btn-secondary">
+                        <i class="fas fa-file"></i> 选择文件
+                    </button>
+                    <div id="import-file-list" class="import-file-list"></div>
+                </div>
+                <div class="import-section">
+                    <label>导入到笔记本：</label>
+                    <select id="import-target-notebook" class="form-select">
+                        <option value="">-- 请选择 --</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="import-cancel" class="btn btn-secondary">取消</button>
+                <button id="import-confirm" class="btn btn-primary" disabled>导入</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Rename Dialog -->
+    <div id="rename-dialog" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2>重命名</h2>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="rename-input" class="form-input" placeholder="输入新名称">
+            </div>
+            <div class="modal-footer">
+                <button id="rename-cancel" class="btn btn-secondary">取消</button>
+                <button id="rename-confirm" class="btn btn-primary">确定</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Dialog -->
+    <div id="delete-dialog" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content small">
+            <div class="modal-header">
+                <h2>确认删除</h2>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p id="delete-message">确定要删除这个项目吗？此操作无法撤销。</p>
+            </div>
+            <div class="modal-footer">
+                <button id="delete-cancel" class="btn btn-secondary">取消</button>
+                <button id="delete-confirm" class="btn btn-danger">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Dialog (Wizard) -->
+    <div id="sync-dialog" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content sync-wizard">
+            <div class="modal-header">
+                <h2 id="sync-wizard-title">同步向导</h2>
+                <button class="modal-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div id="sync-step-role" class="sync-step">
+                    <p class="sync-hint">请选择您在本次同步中的角色：</p>
+                    <div class="sync-role-cards">
+                        <button id="sync-role-initiator" class="sync-role-card">
+                            <i class="fas fa-qrcode"></i>
+                            <strong>发起连接</strong>
+                            <span>生成二维码供对方扫描</span>
+                        </button>
+                        <button id="sync-role-joiner" class="sync-role-card">
+                            <i class="fas fa-camera"></i>
+                            <strong>加入连接</strong>
+                            <span>扫描对方生成的二维码</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="sync-step-offer" class="sync-step hidden">
+                    <p class="sync-hint">请用对方设备扫描此二维码，或复制下方文本：</p>
+                    <div class="sync-qr-container">
+                        <div id="sync-offer-qr" class="sync-qr"></div>
+                        <div id="sync-offer-status" class="sync-status">正在生成连接信息...</div>
+                    </div>
+                    <div class="sync-manual-input">
+                        <label>连接信息（点击复制）</label>
+                        <textarea id="sync-offer-text" class="sync-text-area" readonly placeholder="生成中..."></textarea>
+                    </div>
+                    <p class="sync-hint">等待对方生成应答码后，可扫描或手动输入：</p>
+                    <div class="sync-scan-tabs">
+                        <button id="sync-answer-tab-camera" class="sync-tab active">扫描应答码</button>
+                        <button id="sync-answer-tab-paste" class="sync-tab">手动输入</button>
+                    </div>
+                    <div id="sync-answer-scan-camera" class="sync-scan-panel">
+                        <div id="sync-answer-camera-container" class="sync-camera-container">
+                            <video id="sync-answer-camera-video" autoplay playsinline muted></video>
+                            <div class="sync-scan-overlay">
+                                <div class="scan-frame"></div>
+                            </div>
+                        </div>
+                        <p id="sync-answer-scan-status" class="sync-status">正在打开摄像头...</p>
+                    </div>
+                    <div id="sync-answer-scan-paste" class="sync-scan-panel hidden">
+                        <textarea id="sync-answer-input" class="sync-text-area" placeholder="粘贴对方的应答码..."></textarea>
+                        <button id="sync-apply-answer" class="btn btn-primary">完成连接</button>
+                    </div>
+                </div>
+                <div id="sync-step-scan" class="sync-step hidden">
+                    <div class="sync-scan-tabs">
+                        <button id="sync-tab-camera" class="sync-tab active">扫描二维码</button>
+                        <button id="sync-tab-paste" class="sync-tab">手动输入</button>
+                    </div>
+                    <div id="sync-scan-camera" class="sync-scan-panel">
+                        <div id="sync-camera-container" class="sync-camera-container">
+                            <video id="sync-camera-video" autoplay playsinline muted></video>
+                            <div id="sync-scan-overlay" class="sync-scan-overlay">
+                                <div class="scan-frame"></div>
+                            </div>
+                        </div>
+                        <p id="sync-scan-status" class="sync-status">正在打开摄像头...</p>
+                    </div>
+                    <div id="sync-scan-paste" class="sync-scan-panel hidden">
+                        <label>粘贴发起方提供的连接信息：</label>
+                        <textarea id="sync-offer-paste" class="sync-text-area" placeholder="粘贴连接信息..."></textarea>
+                        <button id="sync-process-offer" class="btn btn-primary">处理</button>
+                    </div>
+                </div>
+                <div id="sync-step-answer" class="sync-step hidden">
+                    <p class="sync-hint">请将此应答码发送给对方（扫描或复制）：</p>
+                    <div class="sync-qr-container">
+                        <div id="sync-answer-qr" class="sync-qr"></div>
+                    </div>
+                    <div class="sync-manual-input">
+                        <label>应答码（点击复制）</label>
+                        <textarea id="sync-answer-text" class="sync-text-area" readonly placeholder="生成中..."></textarea>
+                    </div>
+                    <div id="sync-answer-status" class="sync-status">等待对方确认...</div>
+                </div>
+                <div id="sync-step-done" class="sync-step hidden">
+                    <div class="sync-done-icon"><i class="fas fa-check-circle"></i></div>
+                    <h3>连接成功！</h3>
+                    <p id="sync-peer-info">已与对方设备建立连接</p>
+                    <button id="sync-start-sync" class="btn btn-primary">开始同步</button>
+                </div>
+            </div>
+            <div class="modal-footer sync-footer">
+                <button id="sync-back-btn" class="btn btn-secondary hidden"><i class="fas fa-arrow-left"></i> 返回</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+    
+    <!-- NES Accept Button (Mobile) -->
+    <button id="nes-accept-btn" class="nes-accept-btn hidden">
+        <i class="fas fa-check"></i>
+    </button>
+    
+    <!-- Scripts -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

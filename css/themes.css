@@ -1,0 +1,1125 @@
+/*
+ * KittenNote
+ * Copyright (C) 2026 Author of KittenNote
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/* KittenNote Theme Variations */
+
+/* Color Accent Themes - 32 Colors */
+
+/* Greens */
+[data-accent="green"] {
+    --primary: #4CAF50;
+    --primary-light: #81C784;
+    --primary-dark: #2E7D32;
+    --primary-bg: rgba(76, 175, 80, 0.1);
+}
+
+[data-accent="emerald"] {
+    --primary: #10B981;
+    --primary-light: #34D399;
+    --primary-dark: #059669;
+    --primary-bg: rgba(16, 185, 129, 0.1);
+}
+
+[data-accent="mint"] {
+    --primary: #00BFA5;
+    --primary-light: #4DD0B9;
+    --primary-dark: #00897B;
+    --primary-bg: rgba(0, 191, 165, 0.1);
+}
+
+[data-accent="lime"] {
+    --primary: #84CC16;
+    --primary-light: #A3E635;
+    --primary-dark: #65A30D;
+    --primary-bg: rgba(132, 204, 22, 0.1);
+}
+
+[data-accent="olive"] {
+    --primary: #6B8E23;
+    --primary-light: #8BA84A;
+    --primary-dark: #556B2F;
+    --primary-bg: rgba(107, 142, 35, 0.1);
+}
+
+[data-accent="forest"] {
+    --primary: #228B22;
+    --primary-light: #4CAF50;
+    --primary-dark: #155C15;
+    --primary-bg: rgba(34, 139, 34, 0.1);
+}
+
+/* Blues */
+[data-accent="blue"] {
+    --primary: #2196F3;
+    --primary-light: #64B5F6;
+    --primary-dark: #1565C0;
+    --primary-bg: rgba(33, 150, 243, 0.1);
+}
+
+[data-accent="cobalt"] {
+    --primary: #3B82F6;
+    --primary-light: #60A5FA;
+    --primary-dark: #2563EB;
+    --primary-bg: rgba(59, 130, 246, 0.1);
+}
+
+[data-accent="ocean"] {
+    --primary: #0EA5E9;
+    --primary-light: #38BDF8;
+    --primary-dark: #0284C7;
+    --primary-bg: rgba(14, 165, 233, 0.1);
+}
+
+[data-accent="indigo"] {
+    --primary: #6366F1;
+    --primary-light: #818CF8;
+    --primary-dark: #4F46E5;
+    --primary-bg: rgba(99, 102, 241, 0.1);
+}
+
+[data-accent="navy"] {
+    --primary: #1E3A8A;
+    --primary-light: #3B5EB0;
+    --primary-dark: #172554;
+    --primary-bg: rgba(30, 58, 138, 0.1);
+}
+
+[data-accent="teal"] {
+    --primary: #009688;
+    --primary-light: #4DB6AC;
+    --primary-dark: #00695C;
+    --primary-bg: rgba(0, 150, 136, 0.1);
+}
+
+/* Purples */
+[data-accent="purple"] {
+    --primary: #9C27B0;
+    --primary-light: #BA68C8;
+    --primary-dark: #6A1B9A;
+    --primary-bg: rgba(156, 39, 176, 0.1);
+}
+
+[data-accent="violet"] {
+    --primary: #8B5CF6;
+    --primary-light: #A78BFA;
+    --primary-dark: #7C3AED;
+    --primary-bg: rgba(139, 92, 246, 0.1);
+}
+
+[data-accent="lavender"] {
+    --primary: #A78BFA;
+    --primary-light: #C4B5FD;
+    --primary-dark: #8B5CF6;
+    --primary-bg: rgba(167, 139, 250, 0.1);
+}
+
+[data-accent="plum"] {
+    --primary: #A855F7;
+    --primary-light: #C084FC;
+    --primary-dark: #9333EA;
+    --primary-bg: rgba(168, 85, 247, 0.1);
+}
+
+[data-accent="grape"] {
+    --primary: #7C3AED;
+    --primary-light: #8B5CF6;
+    --primary-dark: #6D28D9;
+    --primary-bg: rgba(124, 58, 237, 0.1);
+}
+
+[data-accent="orchid"] {
+    --primary: #DA70D6;
+    --primary-light: #E89DE5;
+    --primary-dark: #BA55D3;
+    --primary-bg: rgba(218, 112, 214, 0.1);
+}
+
+/* Reds/Pinks */
+[data-accent="pink"] {
+    --primary: #E91E63;
+    --primary-light: #F06292;
+    --primary-dark: #AD1457;
+    --primary-bg: rgba(233, 30, 99, 0.1);
+}
+
+[data-accent="rose"] {
+    --primary: #F43F5E;
+    --primary-light: #FB7185;
+    --primary-dark: #E11D48;
+    --primary-bg: rgba(244, 63, 94, 0.1);
+}
+
+[data-accent="coral"] {
+    --primary: #FF6B6B;
+    --primary-light: #FF8A8A;
+    --primary-dark: #E85555;
+    --primary-bg: rgba(255, 107, 107, 0.1);
+}
+
+[data-accent="crimson"] {
+    --primary: #DC2626;
+    --primary-light: #EF4444;
+    --primary-dark: #B91C1C;
+    --primary-bg: rgba(220, 38, 38, 0.1);
+}
+
+[data-accent="cherry"] {
+    --primary: #BE185D;
+    --primary-light: #DB2777;
+    --primary-dark: #9D174D;
+    --primary-bg: rgba(190, 24, 93, 0.1);
+}
+
+[data-accent="magenta"] {
+    --primary: #D946EF;
+    --primary-light: #E879F9;
+    --primary-dark: #C026D3;
+    --primary-bg: rgba(217, 70, 239, 0.1);
+}
+
+/* Oranges/Yellows */
+[data-accent="orange"] {
+    --primary: #FF9800;
+    --primary-light: #FFB74D;
+    --primary-dark: #EF6C00;
+    --primary-bg: rgba(255, 152, 0, 0.1);
+}
+
+[data-accent="tangerine"] {
+    --primary: #F97316;
+    --primary-light: #FB923C;
+    --primary-dark: #EA580C;
+    --primary-bg: rgba(249, 115, 22, 0.1);
+}
+
+[data-accent="amber"] {
+    --primary: #F59E0B;
+    --primary-light: #FBBF24;
+    --primary-dark: #D97706;
+    --primary-bg: rgba(245, 158, 11, 0.1);
+}
+
+[data-accent="gold"] {
+    --primary: #EAB308;
+    --primary-light: #FACC15;
+    --primary-dark: #CA8A04;
+    --primary-bg: rgba(234, 179, 8, 0.1);
+}
+
+[data-accent="rust"] {
+    --primary: #C2410C;
+    --primary-light: #EA580C;
+    --primary-dark: #9A3412;
+    --primary-bg: rgba(194, 65, 12, 0.1);
+}
+
+[data-accent="peach"] {
+    --primary: #FB923C;
+    --primary-light: #FDBA74;
+    --primary-dark: #F97316;
+    --primary-bg: rgba(251, 146, 60, 0.1);
+}
+
+/* Neutrals */
+[data-accent="slate"] {
+    --primary: #64748B;
+    --primary-light: #94A3B8;
+    --primary-dark: #475569;
+    --primary-bg: rgba(100, 116, 139, 0.1);
+}
+
+[data-accent="charcoal"] {
+    --primary: #374151;
+    --primary-light: #4B5563;
+    --primary-dark: #1F2937;
+    --primary-bg: rgba(55, 65, 81, 0.1);
+}
+
+/* Preset Theme Combinations */
+
+/* Campus - Fresh green with soft backgrounds */
+[data-preset="campus"] {
+    --primary: #4CAF50;
+    --primary-light: #81C784;
+    --primary-dark: #2E7D32;
+    --primary-bg: rgba(76, 175, 80, 0.1);
+}
+
+[data-preset="campus"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F1F8E9;
+    --bg-tertiary: #DCEDC8;
+}
+
+[data-preset="campus"][data-theme="dark"] {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #1B3D1B;
+    --bg-tertiary: #2E5C2E;
+}
+
+/* Ocean - Deep blue with calm tones */
+[data-preset="ocean"] {
+    --primary: #2196F3;
+    --primary-light: #64B5F6;
+    --primary-dark: #1565C0;
+    --primary-bg: rgba(33, 150, 243, 0.1);
+}
+
+[data-preset="ocean"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #E3F2FD;
+    --bg-tertiary: #BBDEFB;
+}
+
+[data-preset="ocean"][data-theme="dark"] {
+    --bg-primary: #0D1B2A;
+    --bg-secondary: #1B263B;
+    --bg-tertiary: #253D5B;
+}
+
+/* Sunset - Warm orange and red tones */
+[data-preset="sunset"] {
+    --primary: #FF9800;
+    --primary-light: #FFB74D;
+    --primary-dark: #EF6C00;
+    --primary-bg: rgba(255, 152, 0, 0.1);
+}
+
+[data-preset="sunset"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF3E0;
+    --bg-tertiary: #FFE0B2;
+}
+
+[data-preset="sunset"][data-theme="dark"] {
+    --bg-primary: #1a1510;
+    --bg-secondary: #2D241A;
+    --bg-tertiary: #3D3025;
+}
+
+/* Forest - Deep teal and green */
+[data-preset="forest"] {
+    --primary: #009688;
+    --primary-light: #4DB6AC;
+    --primary-dark: #00695C;
+    --primary-bg: rgba(0, 150, 136, 0.1);
+}
+
+[data-preset="forest"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #E0F2F1;
+    --bg-tertiary: #B2DFDB;
+}
+
+[data-preset="forest"][data-theme="dark"] {
+    --bg-primary: #0D1A19;
+    --bg-secondary: #1A2E2C;
+    --bg-tertiary: #264240;
+}
+
+/* Lavender */
+[data-preset="lavender"] {
+    --primary: #A78BFA;
+    --primary-light: #C4B5FD;
+    --primary-dark: #8B5CF6;
+    --primary-bg: rgba(167, 139, 250, 0.1);
+}
+
+[data-preset="lavender"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F5F3FF;
+    --bg-tertiary: #EDE9FE;
+}
+
+[data-preset="lavender"][data-theme="dark"] {
+    --bg-primary: #151221;
+    --bg-secondary: #201C33;
+    --bg-tertiary: #2A2542;
+}
+
+/* Cherry */
+[data-preset="cherry"] {
+    --primary: #BE185D;
+    --primary-light: #DB2777;
+    --primary-dark: #9D174D;
+    --primary-bg: rgba(190, 24, 93, 0.1);
+}
+
+[data-preset="cherry"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF1F5;
+    --bg-tertiary: #FFE4E6;
+}
+
+[data-preset="cherry"][data-theme="dark"] {
+    --bg-primary: #1E1116;
+    --bg-secondary: #2A1821;
+    --bg-tertiary: #3A2130;
+}
+
+/* Autumn */
+[data-preset="autumn"] {
+    --primary: #C2410C;
+    --primary-light: #EA580C;
+    --primary-dark: #9A3412;
+    --primary-bg: rgba(194, 65, 12, 0.1);
+}
+
+[data-preset="autumn"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF7ED;
+    --bg-tertiary: #FFEDD5;
+}
+
+[data-preset="autumn"][data-theme="dark"] {
+    --bg-primary: #1D140E;
+    --bg-secondary: #2B1C12;
+    --bg-tertiary: #3B271A;
+}
+
+/* Mint */
+[data-preset="mint"] {
+    --primary: #00BFA5;
+    --primary-light: #4DD0B9;
+    --primary-dark: #00897B;
+    --primary-bg: rgba(0, 191, 165, 0.1);
+}
+
+[data-preset="mint"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #E6FFFB;
+    --bg-tertiary: #BFF7F0;
+}
+
+[data-preset="mint"][data-theme="dark"] {
+    --bg-primary: #0F1A1A;
+    --bg-secondary: #162626;
+    --bg-tertiary: #1E3535;
+}
+
+/* Coral */
+[data-preset="coral"] {
+    --primary: #FF6B6B;
+    --primary-light: #FF8A8A;
+    --primary-dark: #E85555;
+    --primary-bg: rgba(255, 107, 107, 0.1);
+}
+
+[data-preset="coral"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF1F2;
+    --bg-tertiary: #FFE4E6;
+}
+
+[data-preset="coral"][data-theme="dark"] {
+    --bg-primary: #1E1113;
+    --bg-secondary: #2B171A;
+    --bg-tertiary: #3B2125;
+}
+
+/* Night */
+[data-preset="night"] {
+    --primary: #1E3A8A;
+    --primary-light: #3B5EB0;
+    --primary-dark: #172554;
+    --primary-bg: rgba(30, 58, 138, 0.1);
+}
+
+[data-preset="night"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #EEF2FF;
+    --bg-tertiary: #E0E7FF;
+}
+
+[data-preset="night"][data-theme="dark"] {
+    --bg-primary: #0D1426;
+    --bg-secondary: #162039;
+    --bg-tertiary: #1F2B4B;
+}
+
+/* Peach */
+[data-preset="peach"] {
+    --primary: #FB923C;
+    --primary-light: #FDBA74;
+    --primary-dark: #F97316;
+    --primary-bg: rgba(251, 146, 60, 0.1);
+}
+
+[data-preset="peach"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF7ED;
+    --bg-tertiary: #FFEDD5;
+}
+
+[data-preset="peach"][data-theme="dark"] {
+    --bg-primary: #1D140E;
+    --bg-secondary: #2A1C12;
+    --bg-tertiary: #3A271A;
+}
+
+/* Tropical */
+[data-preset="tropical"] {
+    --primary: #10B981;
+    --primary-light: #34D399;
+    --primary-dark: #059669;
+    --primary-bg: rgba(16, 185, 129, 0.1);
+}
+
+[data-preset="tropical"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #ECFDF5;
+    --bg-tertiary: #D1FAE5;
+}
+
+[data-preset="tropical"][data-theme="dark"] {
+    --bg-primary: #0F1C18;
+    --bg-secondary: #152824;
+    --bg-tertiary: #1E3A34;
+}
+
+/* Rose */
+[data-preset="rose"] {
+    --primary: #F43F5E;
+    --primary-light: #FB7185;
+    --primary-dark: #E11D48;
+    --primary-bg: rgba(244, 63, 94, 0.1);
+}
+
+[data-preset="rose"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF1F2;
+    --bg-tertiary: #FFE4E6;
+}
+
+[data-preset="rose"][data-theme="dark"] {
+    --bg-primary: #1E1113;
+    --bg-secondary: #2B171A;
+    --bg-tertiary: #3B2125;
+}
+
+/* Sage */
+[data-preset="sage"] {
+    --primary: #6B8E23;
+    --primary-light: #8BA84A;
+    --primary-dark: #556B2F;
+    --primary-bg: rgba(107, 142, 35, 0.1);
+}
+
+[data-preset="sage"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F7FBEF;
+    --bg-tertiary: #E8F2D6;
+}
+
+[data-preset="sage"][data-theme="dark"] {
+    --bg-primary: #171B12;
+    --bg-secondary: #232915;
+    --bg-tertiary: #2F3A1E;
+}
+
+/* Arctic */
+[data-preset="arctic"] {
+    --primary: #0EA5E9;
+    --primary-light: #38BDF8;
+    --primary-dark: #0284C7;
+    --primary-bg: rgba(14, 165, 233, 0.1);
+}
+
+[data-preset="arctic"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F0F9FF;
+    --bg-tertiary: #E0F2FE;
+}
+
+[data-preset="arctic"][data-theme="dark"] {
+    --bg-primary: #0C1620;
+    --bg-secondary: #132332;
+    --bg-tertiary: #1B3146;
+}
+
+/* Burgundy */
+[data-preset="burgundy"] {
+    --primary: #7C2D12;
+    --primary-light: #DC2626;
+    --primary-dark: #5B1A0B;
+    --primary-bg: rgba(124, 45, 18, 0.1);
+}
+
+[data-preset="burgundy"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF5F5;
+    --bg-tertiary: #FFE4E6;
+}
+
+[data-preset="burgundy"][data-theme="dark"] {
+    --bg-primary: #1E1110;
+    --bg-secondary: #2A1716;
+    --bg-tertiary: #3A2020;
+}
+
+/* Teal */
+[data-preset="teal"] {
+    --primary: #009688;
+    --primary-light: #4DB6AC;
+    --primary-dark: #00695C;
+    --primary-bg: rgba(0, 150, 136, 0.1);
+}
+
+[data-preset="teal"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #E0F2F1;
+    --bg-tertiary: #B2DFDB;
+}
+
+[data-preset="teal"][data-theme="dark"] {
+    --bg-primary: #0D1A19;
+    --bg-secondary: #1A2E2C;
+    --bg-tertiary: #264240;
+}
+
+/* Plum */
+[data-preset="plum"] {
+    --primary: #A855F7;
+    --primary-light: #C084FC;
+    --primary-dark: #9333EA;
+    --primary-bg: rgba(168, 85, 247, 0.1);
+}
+
+[data-preset="plum"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F5F3FF;
+    --bg-tertiary: #EDE9FE;
+}
+
+[data-preset="plum"][data-theme="dark"] {
+    --bg-primary: #151221;
+    --bg-secondary: #201C33;
+    --bg-tertiary: #2A2542;
+}
+
+/* Sand */
+[data-preset="sand"] {
+    --primary: #EAB308;
+    --primary-light: #FACC15;
+    --primary-dark: #CA8A04;
+    --primary-bg: rgba(234, 179, 8, 0.1);
+}
+
+[data-preset="sand"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFFBEB;
+    --bg-tertiary: #FEF3C7;
+}
+
+[data-preset="sand"][data-theme="dark"] {
+    --bg-primary: #1A170E;
+    --bg-secondary: #242013;
+    --bg-tertiary: #332B19;
+}
+
+/* Slate */
+[data-preset="slate"] {
+    --primary: #64748B;
+    --primary-light: #94A3B8;
+    --primary-dark: #475569;
+    --primary-bg: rgba(100, 116, 139, 0.1);
+}
+
+[data-preset="slate"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F1F5F9;
+    --bg-tertiary: #E2E8F0;
+}
+
+[data-preset="slate"][data-theme="dark"] {
+    --bg-primary: #10141B;
+    --bg-secondary: #1A2230;
+    --bg-tertiary: #243144;
+}
+
+/* Crimson */
+[data-preset="crimson"] {
+    --primary: #DC2626;
+    --primary-light: #EF4444;
+    --primary-dark: #B91C1C;
+    --primary-bg: rgba(220, 38, 38, 0.1);
+}
+
+[data-preset="crimson"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FEF2F2;
+    --bg-tertiary: #FEE2E2;
+}
+
+[data-preset="crimson"][data-theme="dark"] {
+    --bg-primary: #1C1111;
+    --bg-secondary: #271616;
+    --bg-tertiary: #361E1E;
+}
+
+/* Lime */
+[data-preset="lime"] {
+    --primary: #84CC16;
+    --primary-light: #A3E635;
+    --primary-dark: #65A30D;
+    --primary-bg: rgba(132, 204, 22, 0.1);
+}
+
+[data-preset="lime"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F7FEE7;
+    --bg-tertiary: #ECFCCB;
+}
+
+[data-preset="lime"][data-theme="dark"] {
+    --bg-primary: #151A0F;
+    --bg-secondary: #1F2613;
+    --bg-tertiary: #2C361B;
+}
+
+/* Indigo */
+[data-preset="indigo"] {
+    --primary: #6366F1;
+    --primary-light: #818CF8;
+    --primary-dark: #4F46E5;
+    --primary-bg: rgba(99, 102, 241, 0.1);
+}
+
+[data-preset="indigo"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #EEF2FF;
+    --bg-tertiary: #E0E7FF;
+}
+
+[data-preset="indigo"][data-theme="dark"] {
+    --bg-primary: #151628;
+    --bg-secondary: #1E2340;
+    --bg-tertiary: #282D52;
+}
+
+/* Tangerine */
+[data-preset="tangerine"] {
+    --primary: #F97316;
+    --primary-light: #FB923C;
+    --primary-dark: #EA580C;
+    --primary-bg: rgba(249, 115, 22, 0.1);
+}
+
+[data-preset="tangerine"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF7ED;
+    --bg-tertiary: #FFEDD5;
+}
+
+[data-preset="tangerine"][data-theme="dark"] {
+    --bg-primary: #1D140E;
+    --bg-secondary: #2A1C12;
+    --bg-tertiary: #3A271A;
+}
+
+/* Orchid */
+[data-preset="orchid"] {
+    --primary: #DA70D6;
+    --primary-light: #E89DE5;
+    --primary-dark: #BA55D3;
+    --primary-bg: rgba(218, 112, 214, 0.1);
+}
+
+[data-preset="orchid"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FDF4FF;
+    --bg-tertiary: #FAE8FF;
+}
+
+[data-preset="orchid"][data-theme="dark"] {
+    --bg-primary: #1C1420;
+    --bg-secondary: #281B2E;
+    --bg-tertiary: #37243D;
+}
+
+/* Navy */
+[data-preset="navy"] {
+    --primary: #1E3A8A;
+    --primary-light: #3B5EB0;
+    --primary-dark: #172554;
+    --primary-bg: rgba(30, 58, 138, 0.1);
+}
+
+[data-preset="navy"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #EEF2FF;
+    --bg-tertiary: #E0E7FF;
+}
+
+[data-preset="navy"][data-theme="dark"] {
+    --bg-primary: #0D1426;
+    --bg-secondary: #162039;
+    --bg-tertiary: #1F2B4B;
+}
+
+/* Amber */
+[data-preset="amber"] {
+    --primary: #F59E0B;
+    --primary-light: #FBBF24;
+    --primary-dark: #D97706;
+    --primary-bg: rgba(245, 158, 11, 0.1);
+}
+
+[data-preset="amber"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFFBEB;
+    --bg-tertiary: #FEF3C7;
+}
+
+[data-preset="amber"][data-theme="dark"] {
+    --bg-primary: #1A170E;
+    --bg-secondary: #242013;
+    --bg-tertiary: #332B19;
+}
+
+/* Grape */
+[data-preset="grape"] {
+    --primary: #7C3AED;
+    --primary-light: #8B5CF6;
+    --primary-dark: #6D28D9;
+    --primary-bg: rgba(124, 58, 237, 0.1);
+}
+
+[data-preset="grape"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #F5F3FF;
+    --bg-tertiary: #EDE9FE;
+}
+
+[data-preset="grape"][data-theme="dark"] {
+    --bg-primary: #151221;
+    --bg-secondary: #201C33;
+    --bg-tertiary: #2A2542;
+}
+
+/* Emerald */
+[data-preset="emerald"] {
+    --primary: #10B981;
+    --primary-light: #34D399;
+    --primary-dark: #059669;
+    --primary-bg: rgba(16, 185, 129, 0.1);
+}
+
+[data-preset="emerald"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #ECFDF5;
+    --bg-tertiary: #D1FAE5;
+}
+
+[data-preset="emerald"][data-theme="dark"] {
+    --bg-primary: #0F1C18;
+    --bg-secondary: #152824;
+    --bg-tertiary: #1E3A34;
+}
+
+/* Rust */
+[data-preset="rust"] {
+    --primary: #C2410C;
+    --primary-light: #EA580C;
+    --primary-dark: #9A3412;
+    --primary-bg: rgba(194, 65, 12, 0.1);
+}
+
+[data-preset="rust"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FFF7ED;
+    --bg-tertiary: #FFEDD5;
+}
+
+[data-preset="rust"][data-theme="dark"] {
+    --bg-primary: #1D140E;
+    --bg-secondary: #2A1C12;
+    --bg-tertiary: #3A271A;
+}
+
+/* Cobalt */
+[data-preset="cobalt"] {
+    --primary: #3B82F6;
+    --primary-light: #60A5FA;
+    --primary-dark: #2563EB;
+    --primary-bg: rgba(59, 130, 246, 0.1);
+}
+
+[data-preset="cobalt"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #EFF6FF;
+    --bg-tertiary: #DBEAFE;
+}
+
+[data-preset="cobalt"][data-theme="dark"] {
+    --bg-primary: #0F1626;
+    --bg-secondary: #17233B;
+    --bg-tertiary: #1F2E4B;
+}
+
+/* Magenta */
+[data-preset="magenta"] {
+    --primary: #D946EF;
+    --primary-light: #E879F9;
+    --primary-dark: #C026D3;
+    --primary-bg: rgba(217, 70, 239, 0.1);
+}
+
+[data-preset="magenta"][data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #FDF4FF;
+    --bg-tertiary: #FAE8FF;
+}
+
+[data-preset="magenta"][data-theme="dark"] {
+    --bg-primary: #1C1420;
+    --bg-secondary: #281B2E;
+    --bg-tertiary: #37243D;
+}
+
+/* Animation Classes */
+.fade-in {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.slide-in-left {
+    animation: slideInLeft 0.3s ease;
+}
+
+@keyframes slideInLeft {
+    from { 
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.slide-in-right {
+    animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+    from { 
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.slide-in-up {
+    animation: slideInUp 0.3s ease;
+}
+
+@keyframes slideInUp {
+    from { 
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.scale-in {
+    animation: scaleIn 0.2s ease;
+}
+
+@keyframes scaleIn {
+    from { 
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to { 
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.pulse {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Preset Theme Previews */
+.preset-preview { display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 8px; }
+.preset-preview.campus { background: linear-gradient(135deg, #4CAF50 0%, #2196F3 100%); }
+.preset-preview.ocean { background: linear-gradient(135deg, #0EA5E9 0%, #1E3A8A 100%); }
+.preset-preview.sunset { background: linear-gradient(135deg, #FF9800 0%, #E91E63 100%); }
+.preset-preview.forest { background: linear-gradient(135deg, #228B22 0%, #6B8E23 100%); }
+.preset-preview.lavender { background: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%); }
+.preset-preview.cherry { background: linear-gradient(135deg, #BE185D 0%, #F43F5E 100%); }
+.preset-preview.autumn { background: linear-gradient(135deg, #C2410C 0%, #EAB308 100%); }
+.preset-preview.mint { background: linear-gradient(135deg, #00BFA5 0%, #10B981 100%); }
+.preset-preview.coral { background: linear-gradient(135deg, #FF6B6B 0%, #FB923C 100%); }
+.preset-preview.night { background: linear-gradient(135deg, #172554 0%, #6366F1 100%); }
+.preset-preview.peach { background: linear-gradient(135deg, #FB923C 0%, #F97316 100%); }
+.preset-preview.tropical { background: linear-gradient(135deg, #10B981 0%, #84CC16 100%); }
+.preset-preview.rose { background: linear-gradient(135deg, #F43F5E 0%, #E91E63 100%); }
+.preset-preview.sage { background: linear-gradient(135deg, #6B8E23 0%, #84CC16 100%); }
+.preset-preview.arctic { background: linear-gradient(135deg, #0EA5E9 0%, #E0F2FE 100%); }
+.preset-preview.burgundy { background: linear-gradient(135deg, #7C2D12 0%, #DC2626 100%); }
+.preset-preview.teal { background: linear-gradient(135deg, #009688 0%, #00BFA5 100%); }
+.preset-preview.plum { background: linear-gradient(135deg, #A855F7 0%, #9C27B0 100%); }
+.preset-preview.sand { background: linear-gradient(135deg, #EAB308 0%, #FEF3C7 100%); }
+.preset-preview.slate { background: linear-gradient(135deg, #64748B 0%, #374151 100%); }
+.preset-preview.crimson { background: linear-gradient(135deg, #DC2626 0%, #7C2D12 100%); }
+.preset-preview.lime { background: linear-gradient(135deg, #84CC16 0%, #A3E635 100%); }
+.preset-preview.indigo { background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%); }
+.preset-preview.tangerine { background: linear-gradient(135deg, #F97316 0%, #FF9800 100%); }
+.preset-preview.orchid { background: linear-gradient(135deg, #DA70D6 0%, #BA68C8 100%); }
+.preset-preview.navy { background: linear-gradient(135deg, #1E3A8A 0%, #172554 100%); }
+.preset-preview.amber { background: linear-gradient(135deg, #F59E0B 0%, #EAB308 100%); }
+.preset-preview.grape { background: linear-gradient(135deg, #7C3AED 0%, #A855F7 100%); }
+.preset-preview.emerald { background: linear-gradient(135deg, #10B981 0%, #059669 100%); }
+.preset-preview.rust { background: linear-gradient(135deg, #C2410C 0%, #7C2D12 100%); }
+.preset-preview.cobalt { background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%); }
+.preset-preview.magenta { background: linear-gradient(135deg, #D946EF 0%, #BE185D 100%); }
+
+/* Drag and Drop States */
+.dragging {
+    opacity: 0.5;
+    cursor: grabbing !important;
+}
+
+.drop-target {
+    background: var(--primary-bg) !important;
+    border: 2px dashed var(--primary) !important;
+}
+
+.drop-target-above::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--primary);
+}
+
+.drop-target-below::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--primary);
+}
+
+/* Selection States */
+.selected {
+    background: var(--primary-bg) !important;
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
+/* Focus States */
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Custom Scrollbar for Webkit */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* Firefox scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+    :root {
+        --border-color: #000000;
+        --shadow-color: rgba(0, 0, 0, 0.3);
+    }
+    
+    [data-theme="dark"] {
+        --border-color: #ffffff;
+    }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Touch optimizations for mobile */
+@media (hover: none) and (pointer: coarse) {
+    .btn,
+    .btn-icon,
+    .btn-tool,
+    .tree-item-content,
+    .page-item {
+        min-height: 44px;
+    }
+    
+    .tree-item-content {
+        padding: 10px 16px;
+    }
+    
+    .page-item {
+        padding: 8px 12px;
+    }
+}
+
+/* Apple Pencil / Stylus optimization */
+@media (pointer: fine) {
+    .ink-canvas {
+        touch-action: none;
+    }
+}

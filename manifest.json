@@ -1,0 +1,94 @@
+{
+    "name": "KittenNote",
+    "short_name": "KittenNote",
+    "description": "一款支持文字和墨迹编辑的跨平台PWA笔记软件",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#4CAF50",
+    "orientation": "any",
+    "scope": "./",
+    "lang": "zh-CN",
+    "categories": ["productivity", "utilities"],
+    "icons": [
+        {
+            "src": "icons/icon-32.png",
+            "sizes": "32x32",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-72.png",
+            "sizes": "72x72",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-96.png",
+            "sizes": "96x96",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-128.png",
+            "sizes": "128x128",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-144.png",
+            "sizes": "144x144",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-152.png",
+            "sizes": "152x152",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-256.png",
+            "sizes": "256x256",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-384.png",
+            "sizes": "384x384",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "新建文字笔记",
+            "short_name": "新建文字",
+            "description": "创建一个新的文字笔记",
+            "url": "./index.html?action=new-text",
+            "icons": [{ "src": "icons/icon-text.png", "sizes": "96x96" }]
+        },
+        {
+            "name": "新建墨迹笔记",
+            "short_name": "新建墨迹",
+            "description": "创建一个新的墨迹笔记",
+            "url": "./index.html?action=new-ink",
+            "icons": [{ "src": "icons/icon-ink.png", "sizes": "96x96" }]
+        }
+    ],
+    "screenshots": [],
+    "related_applications": [],
+    "prefer_related_applications": false
+}

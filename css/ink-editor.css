@@ -1,0 +1,503 @@
+/* KittenNote Ink Editor Styles */
+
+/*
+ * KittenNote
+ * Copyright (C) 2026 Author of KittenNote
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/* Canvas Container */
+#ink-editor {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background: var(--bg-primary);
+    overflow: hidden;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+/* Canvas Layers */
+.ink-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    will-change: contents;
+    contain: strict;
+}
+
+.ink-canvas.bg-layer {
+    z-index: 1;
+}
+
+.ink-canvas.main-layer {
+    z-index: 2;
+}
+
+.ink-canvas.ui-layer {
+    z-index: 3;
+    pointer-events: none;
+}
+
+/* Tool Cursors */
+#ink-editor[data-tool="pen"] {
+    cursor: crosshair;
+}
+
+#ink-editor[data-tool="highlighter"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%23FFD700" d="M18.5 1.15c-.53 0-1.04.19-1.43.58l-5.81 5.82 5.65 5.65 5.82-5.81c.77-.78.77-2.04 0-2.83l-2.83-2.83c-.39-.39-.89-.58-1.4-.58zM10.3 8.5l-4.3 4.3V17h4.2l4.3-4.3-4.2-4.2zM4.5 19h15v2h-15v-2z"/></svg>') 4 20, crosshair;
+}
+
+#ink-editor[data-tool="eraser"] {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect fill="%23FFB6C1" x="6" y="6" width="12" height="12" rx="2"/><rect fill="%23FFF" x="8" y="8" width="8" height="8" rx="1"/></svg>') 12 12, crosshair;
+}
+
+#ink-editor[data-tool="select"] {
+    cursor: default;
+}
+
+#ink-editor[data-tool="line"],
+#ink-editor[data-tool="rectangle"],
+#ink-editor[data-tool="circle"],
+#ink-editor[data-tool="arrow"] {
+    cursor: crosshair;
+}
+
+/* Selection Box */
+.ink-selection-box {
+    position: absolute;
+    border: 2px dashed var(--primary);
+    background: var(--primary-bg);
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* Selection Handles */
+.selection-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: white;
+    border: 2px solid var(--primary);
+    border-radius: 2px;
+    cursor: pointer;
+    z-index: 11;
+}
+
+.selection-handle.nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.selection-handle.ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.selection-handle.sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.selection-handle.se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.selection-handle.n { top: -5px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.selection-handle.s { bottom: -5px; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.selection-handle.w { top: 50%; left: -5px; transform: translateY(-50%); cursor: ew-resize; }
+.selection-handle.e { top: 50%; right: -5px; transform: translateY(-50%); cursor: ew-resize; }
+
+/* Ink Toolbar Additional Styles */
+.ink-toolbar .toolbar-group.colors {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#stroke-color {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    overflow: hidden;
+}
+
+#stroke-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+#stroke-color::-webkit-color-swatch {
+    border: none;
+    border-radius: 2px;
+}
+
+#stroke-width {
+    width: 100px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border-color);
+    border-radius: 2px;
+    outline: none;
+}
+
+#stroke-width::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--primary);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+#stroke-width::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+#stroke-width::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--primary);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+#stroke-width-value {
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 30px;
+}
+
+/* Quick Color Palette */
+.quick-colors {
+    display: flex;
+    gap: 4px;
+}
+
+.quick-color {
+    width: 24px;
+    height: 24px;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.quick-color:hover {
+    transform: scale(1.1);
+}
+
+.quick-color.active {
+    border-color: var(--text-primary);
+}
+
+/* Drawing preview */
+.drawing-preview {
+    position: fixed;
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.5;
+}
+
+/* Grid overlay for canvas */
+.canvas-grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    background-image: 
+        linear-gradient(to right, var(--border-color) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--border-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+    opacity: 0.3;
+}
+
+.canvas-grid.hidden {
+    display: none;
+}
+
+/* Zoom controls */
+.zoom-controls {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 20;
+}
+
+.zoom-controls button {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all var(--transition-fast);
+    box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+.zoom-controls button:hover {
+    background: var(--primary-bg);
+    color: var(--primary);
+}
+
+.zoom-level {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+}
+
+/* Touch feedback for drawing */
+@keyframes touchFeedback {
+    0% {
+        transform: scale(0);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+.touch-feedback {
+    position: fixed;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    pointer-events: none;
+    animation: touchFeedback 0.3s ease-out forwards;
+    z-index: 1000;
+}
+
+/* Pressure indicator */
+.pressure-indicator {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    color: var(--text-secondary);
+    z-index: 20;
+    box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+.pressure-indicator.hidden {
+    display: none;
+}
+
+/* Straightening indicator */
+.straightening-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 12px 24px;
+    background: var(--bg-primary);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    color: var(--primary);
+    z-index: 100;
+    box-shadow: 0 4px 16px var(--shadow-color);
+    animation: fadeIn 0.2s ease;
+}
+
+/* Mobile ink toolbar */
+@media (max-width: 768px) {
+    .ink-toolbar {
+        position: fixed;
+        bottom: 0;
+        left: var(--sidebar-width);
+        right: 0;
+        width: calc(100% - var(--sidebar-width));
+        background: var(--bg-secondary);
+        border-top: 1px solid var(--border-color);
+        padding: 6px 8px;
+        padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        z-index: 50;
+        box-sizing: border-box;
+        gap: 6px;
+    }
+
+    .sidebar.collapsed ~ .main-content .ink-toolbar {
+        left: var(--sidebar-collapsed-width);
+        width: calc(100% - var(--sidebar-collapsed-width));
+    }
+    
+    .ink-toolbar .toolbar-group {
+        flex-shrink: 0;
+    }
+
+    .ink-toolbar .toolbar-group.colors {
+        gap: 4px;
+    }
+
+    .ink-toolbar .toolbar-group.colors #stroke-width {
+        width: 60px;
+    }
+    
+    .zoom-controls {
+        bottom: 80px;
+    }
+    
+    .pressure-indicator {
+        bottom: 80px;
+    }
+}
+
+/* Tablet stylus optimization */
+@media (pointer: fine) {
+    #ink-editor {
+        /* Prevent accidental palm rejection issues */
+        touch-action: none;
+    }
+}
+
+/* High DPI canvas */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .ink-canvas {
+        image-rendering: -webkit-optimize-contrast;
+    }
+}
+
+/* Scrollbars for infinite canvas */
+.ink-scrollbar {
+    position: absolute;
+    background: rgba(128, 128, 128, 0.15);
+    border-radius: 4px;
+    z-index: 10;
+    opacity: 0.6;
+    transition: opacity 0.3s ease;
+}
+
+.ink-scrollbar:hover {
+    opacity: 1;
+}
+
+.ink-scrollbar.horizontal {
+    left: 10px;
+    right: 20px;
+    bottom: 6px;
+    height: 8px;
+}
+
+.ink-scrollbar.vertical {
+    top: 10px;
+    bottom: 20px;
+    right: 6px;
+    width: 8px;
+}
+
+.scrollbar-thumb {
+    position: absolute;
+    background: var(--text-secondary, #666);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.ink-scrollbar.horizontal .scrollbar-thumb {
+    height: 100%;
+    min-width: 40px;
+}
+
+.ink-scrollbar.vertical .scrollbar-thumb {
+    width: 100%;
+    min-height: 40px;
+}
+
+.scrollbar-thumb:hover {
+    background: var(--accent-primary, #4a9eff);
+}
+
+/* Panning cursor */
+#ink-editor.panning {
+    cursor: grab !important;
+}
+
+#ink-editor.panning:active {
+    cursor: grabbing !important;
+}
+
+/* Selection Menu */
+.ink-selection-menu {
+    position: absolute;
+    display: flex;
+    gap: 4px;
+    background: var(--bg-secondary, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.ink-selection-menu button {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary, #333);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.ink-selection-menu button:hover {
+    background: var(--primary-bg, #e3f2fd);
+    color: var(--primary, #2196f3);
+}
+
+.ink-selection-menu button[data-action="delete"]:hover {
+    background: #ffebee;
+    color: #f44336;
+}
+
+.ink-selection-hint {
+    font-size: 10px;
+    color: var(--text-muted, #999);
+    padding: 2px 6px;
+    border-top: 1px solid var(--border-color, #eee);
+    margin-top: 4px;
+    text-align: center;
+    white-space: nowrap;
+}

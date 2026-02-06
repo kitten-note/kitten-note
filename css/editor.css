@@ -1,0 +1,343 @@
+/*
+ * KittenNote
+ * Copyright (C) 2026 Author of KittenNote
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/* KittenNote Text Editor Styles */
+
+/* Text Content Area */
+.text-content {
+    width: 100%;
+    height: 100%;
+    padding: 24px 40px;
+    overflow-y: auto;
+    font-size: 16px;
+    line-height: 1.8;
+    color: var(--text-primary);
+    outline: none;
+    position: relative;
+}
+
+.text-content:empty::before {
+    content: '开始输入...';
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+/* Markdown Rendered Styles */
+.text-content h1 {
+    font-size: 2em;
+    font-weight: 700;
+    margin: 0.67em 0;
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.text-content h2 {
+    font-size: 1.5em;
+    font-weight: 600;
+    margin: 0.83em 0;
+    padding-bottom: 0.2em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.text-content h3 {
+    font-size: 1.25em;
+    font-weight: 600;
+    margin: 1em 0;
+}
+
+.text-content h4 {
+    font-size: 1em;
+    font-weight: 600;
+    margin: 1.33em 0;
+}
+
+.text-content h5 {
+    font-size: 0.875em;
+    font-weight: 600;
+    margin: 1.67em 0;
+}
+
+.text-content h6 {
+    font-size: 0.85em;
+    font-weight: 600;
+    margin: 2.33em 0;
+    color: var(--text-secondary);
+}
+
+.text-content p {
+    margin: 1em 0;
+}
+
+.text-content strong, 
+.text-content b {
+    font-weight: 700;
+}
+
+.text-content em, 
+.text-content i {
+    font-style: italic;
+}
+
+.text-content u {
+    text-decoration: underline;
+}
+
+.text-content s,
+.text-content del {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.text-content blockquote {
+    margin: 1em 0;
+    padding: 0.5em 1em;
+    border-left: 4px solid var(--primary);
+    background: var(--primary-bg);
+    color: var(--text-secondary);
+}
+
+.text-content blockquote p {
+    margin: 0;
+}
+
+.text-content ul,
+.text-content ol {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+.text-content li {
+    margin: 0.5em 0;
+}
+
+.text-content ul li {
+    list-style-type: disc;
+}
+
+.text-content ol li {
+    list-style-type: decimal;
+}
+
+.text-content code {
+    font-family: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9em;
+    padding: 0.2em 0.4em;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    color: var(--primary-dark);
+}
+
+.text-content pre {
+    margin: 1em 0;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+}
+
+.text-content pre code {
+    display: block;
+    padding: 0;
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.text-content a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.text-content a:hover {
+    text-decoration: underline;
+}
+
+.text-content hr {
+    margin: 2em 0;
+    border: none;
+    border-top: 1px solid var(--border-color);
+}
+
+.text-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+}
+
+.text-content th,
+.text-content td {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.text-content th {
+    background: var(--bg-secondary);
+    font-weight: 600;
+}
+
+.text-content img {
+    max-width: 100%;
+    border-radius: var(--radius-md);
+}
+
+/* NES Suggestion Overlay */
+.nes-suggestion {
+    position: absolute;
+    pointer-events: none;
+    color: var(--text-muted);
+    opacity: 0.6;
+    font-style: italic;
+    font-size: 16px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    z-index: 10;
+}
+
+.nes-suggestion.visible {
+    display: block;
+}
+
+/* NES Inline Suggestion */
+.nes-inline-suggestion {
+    color: var(--text-muted);
+    opacity: 0.6;
+    font-style: italic;
+    white-space: pre-wrap;
+    pointer-events: none;
+}
+
+/* Selection Highlight */
+.text-content ::selection {
+    background: var(--primary-bg);
+    color: var(--primary-dark);
+}
+
+/* Placeholder for empty lines */
+.text-content .empty-line::before {
+    content: '\00a0';
+}
+
+/* Cursor blink */
+.text-content:focus {
+    caret-color: var(--primary);
+}
+
+/* Markdown syntax highlighting in source mode */
+.md-heading {
+    color: var(--primary);
+}
+
+.md-bold {
+    font-weight: 700;
+}
+
+.md-italic {
+    font-style: italic;
+}
+
+.md-code {
+    font-family: monospace;
+    background: var(--bg-tertiary);
+}
+
+.md-link {
+    color: var(--primary);
+}
+
+.md-quote {
+    color: var(--text-secondary);
+}
+
+/* Typing indicator */
+.typing-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: var(--primary);
+    animation: blink 1s infinite;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* Word count and stats */
+.editor-stats {
+    position: absolute;
+    bottom: 12px;
+    right: 24px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+}
+
+/* Format popup */
+.format-popup {
+    position: fixed;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 16px var(--shadow-color);
+    padding: 4px;
+    display: flex;
+    gap: 4px;
+    z-index: var(--z-context-menu);
+    animation: scaleIn 0.15s ease;
+}
+
+.format-popup button {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.format-popup button:hover {
+    background: var(--primary-bg);
+    color: var(--primary);
+}
+
+.format-popup button.active {
+    background: var(--primary);
+    color: white;
+}
+
+/* Mobile text editor optimizations */
+@media (max-width: 768px) {
+    .text-content {
+        padding: 16px 20px;
+        font-size: 15px;
+    }
+    
+    .editor-stats {
+        bottom: 8px;
+        right: 12px;
+    }
+}
