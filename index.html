@@ -118,6 +118,12 @@
                         <span id="save-status" class="save-status saved">✓ 已保存</span>
                     </div>
                     <div class="editor-actions">
+                        <button id="zoom-out-btn" class="btn-icon" title="缩小">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <button id="zoom-in-btn" class="btn-icon" title="放大">
+                            <i class="fas fa-plus"></i>
+                        </button>
                         <button id="undo-btn" class="btn-icon" title="撤销 (Ctrl+Z)">
                             <i class="fas fa-undo"></i>
                         </button>
@@ -169,14 +175,7 @@
                             <i class="fas fa-quote-right"></i>
                         </button>
                     </div>
-                    <div class="toolbar-group text-colors">
-                        <button class="color-swatch" data-text-color="#212121" title="黑色"></button>
-                        <button class="color-swatch" data-text-color="#4CAF50" title="绿色"></button>
-                        <button class="color-swatch" data-text-color="#2196F3" title="蓝色"></button>
-                        <button class="color-swatch" data-text-color="#9C27B0" title="紫色"></button>
-                        <button class="color-swatch" data-text-color="#FF9800" title="橙色"></button>
-                        <button class="color-swatch" data-text-color="#F44336" title="红色"></button>
-                    </div>
+
                     <div class="toolbar-group">
                         <label class="nes-toggle" title="NES 智能建议">
                             <input type="checkbox" id="nes-toggle">
@@ -744,7 +743,7 @@
                             <img src="icons/icon-256.png" alt="KittenNote" class="about-logo-icon">
                         </div>
                         <h3>KittenNote</h3>
-                        <p class="version">版本1 第1次更新</p>
+                        <p class="version">版本1 第2次更新</p>
                         <p class="description">一款支持文字和墨迹编辑的跨平台PWA笔记软件</p>
                         <div class="about-features">
                             <p><i class="fas fa-check"></i> 离线优先，本地存储</p>

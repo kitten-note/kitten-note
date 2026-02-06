@@ -563,26 +563,7 @@ html, body {
     color: white;
 }
 
-.text-colors {
-    display: flex;
-    gap: 6px;
-}
 
-.text-colors .color-swatch {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 1px solid var(--border-color);
-    cursor: pointer;
-    background: var(--bg-primary);
-}
-
-.text-colors .color-swatch[data-text-color="#212121"] { background: #212121; }
-.text-colors .color-swatch[data-text-color="#4CAF50"] { background: #4CAF50; }
-.text-colors .color-swatch[data-text-color="#2196F3"] { background: #2196F3; }
-.text-colors .color-swatch[data-text-color="#9C27B0"] { background: #9C27B0; }
-.text-colors .color-swatch[data-text-color="#FF9800"] { background: #FF9800; }
-.text-colors .color-swatch[data-text-color="#F44336"] { background: #F44336; }
 
 .font-size-indicator {
     padding: 6px 10px;

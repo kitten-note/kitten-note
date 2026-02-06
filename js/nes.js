@@ -175,6 +175,11 @@ export class NESManager {
         this.enabled = true;
         this.setStatus('idle');
         this.app.logger?.info('I noticed that NES woke up and is ready.');
+
+        if (this.mode === 'api') {
+            this.isModelLoaded = true;
+            return;
+        }
         
         // Check if model is loaded
         if (!this.isModelLoaded) {
@@ -354,7 +359,7 @@ export class NESManager {
     
     scheduleInference() {
         if (!this.enabled) return;
-        if (!this.isModelLoaded) {
+        if (this.mode === 'local' && !this.isModelLoaded) {
             if (!this.warnedNoModel) {
                 this.app.logger?.warn('I noticed that NES cannot think without its model.');
                 this.warnedNoModel = true;

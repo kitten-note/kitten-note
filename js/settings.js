@@ -164,6 +164,10 @@ export class SettingsManager {
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
             if (this.settings.theme === 'auto') {
                 this.applyTheme(e.matches ? 'dark' : 'light');
+                // Re-apply notebook style so background color follows dark/light mode
+                if (this.app.currentNotebook) {
+                    this.app.applyNotebookStyle(this.app.currentNotebook);
+                }
             }
         });
     }
@@ -308,6 +312,11 @@ export class SettingsManager {
             this.applyTheme(prefersDark ? 'dark' : 'light');
         } else {
             this.applyTheme(mode);
+        }
+        
+        // Re-apply notebook style so background follows theme
+        if (this.app.currentNotebook) {
+            this.app.applyNotebookStyle(this.app.currentNotebook);
         }
         
         // Update UI

@@ -425,6 +425,17 @@ class KittenNoteApp {
             const icon = toggleSidebar.querySelector('i');
             icon.classList.toggle('fa-chevron-left');
             icon.classList.toggle('fa-chevron-right');
+            // Resize ink canvas after sidebar transition completes
+            setTimeout(() => {
+                this.inkEditor?.setupCanvasSize();
+            }, 350);
+        });
+
+        // Also resize on sidebar CSS transition end for accuracy
+        sidebar?.addEventListener('transitionend', (e) => {
+            if (e.propertyName === 'width') {
+                this.inkEditor?.setupCanvasSize();
+            }
         });
 
         let wasMobile = window.innerWidth <= 768;
@@ -493,6 +504,8 @@ class KittenNoteApp {
         });
         
         // Editor header buttons
+        document.getElementById('zoom-out-btn')?.addEventListener('click', () => this.zoom(-1));
+        document.getElementById('zoom-in-btn')?.addEventListener('click', () => this.zoom(1));
         document.getElementById('undo-btn')?.addEventListener('click', () => this.undo());
         document.getElementById('redo-btn')?.addEventListener('click', () => this.redo());
         document.getElementById('save-btn')?.addEventListener('click', () => this.save());
@@ -1516,6 +1529,26 @@ class KittenNoteApp {
             this.inkEditor.redo();
         }
     }
+
+    zoom(direction) {
+        // direction: 1 = zoom in, -1 = zoom out
+        if (this.currentNote?.type === 'text') {
+            const step = 2;
+            const newSize = this.textEditor.getFontSize() + step * direction;
+            this.textEditor.setFontSize(Math.max(8, Math.min(72, newSize)));
+        } else if (this.currentNote?.type === 'ink') {
+            const factor = direction > 0 ? 1.2 : 0.8;
+            const newScale = Math.max(0.25, Math.min(4, this.inkEditor.scale * factor));
+            // Zoom towards center of canvas
+            const rect = this.inkEditor.mainCanvas.getBoundingClientRect();
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            this.inkEditor.offset.x = cx - (cx - this.inkEditor.offset.x) * (newScale / this.inkEditor.scale);
+            this.inkEditor.offset.y = cy - (cy - this.inkEditor.offset.y) * (newScale / this.inkEditor.scale);
+            this.inkEditor.scale = newScale;
+            this.inkEditor.render();
+        }
+    }
     
     markModified() {
         this.isModified = true;
@@ -1660,9 +1693,12 @@ class KittenNoteApp {
     }
 
     applyNotebookStyle(notebook) {
+        const theme = document.documentElement.getAttribute('data-theme');
+        const isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        const defaultColor = isDark ? '#1a1a1a' : '#ffffff';
         const style = notebook?.pageStyle || {
             pattern: 'blank',
-            color: '#ffffff'
+            color: defaultColor
         };
         this.textEditor?.setPageStyle(style);
         this.inkEditor?.setPageStyle(style);

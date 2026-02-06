@@ -264,49 +264,55 @@ export class InkEditor {
         e.preventDefault();
         this.mainCanvas.setPointerCapture(e.pointerId);
 
-        // Handle selection move mode
+        const isTouch = e.pointerType === 'touch';
+        const isPen = e.pointerType === 'pen';
+
+        // Track stylus activity for palm rejection
+        if (isPen) {
+            this.recentStylusTime = Date.now();
+        }
+
+        // Track all touch pointers for pinch-zoom (always, regardless of tool)
+        if (isTouch) {
+            this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        }
+
+        // Handle selection move mode (any pointer type)
         if (this.isMovingSelection) {
             const point = this.getPoint(e);
             this.moveStartPoint = point;
             return;
         }
 
-        // Track stylus activity for palm rejection
-        if (e.pointerType === 'pen') {
-            this.recentStylusTime = Date.now();
-        }
-
-        // Palm rejection: ignore touch if stylus was recently used
-        if (e.pointerType === 'touch' && this.palmRejectionEnabled) {
-            if (Date.now() - this.recentStylusTime < this.stylusActiveTimeout) {
-                return; // Ignore touch during stylus activity
+        // Palm rejection: ignore palm-like touch when stylus was recently active
+        if (isTouch && this.palmRejectionEnabled) {
+            if (isPen || (Date.now() - this.recentStylusTime < this.stylusActiveTimeout)) {
+                // During active pen usage, touch can still pinch-zoom but not draw
+                if (this.activePointers.size >= 2) {
+                    this._startPinch();
+                }
+                return;
             }
-            // Check for palm-like characteristics
             if (this.isPalmTouch(e)) {
                 return;
             }
         }
 
-        // Move tool: single pointer pan, two-finger pinch/zoom
-        if (this.currentTool === 'move') {
-            if (e.pointerType === 'touch') {
-                this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-                if (this.activePointers.size >= 2) {
-                    this.isPanning = false;
-                    this.container?.classList.remove('panning');
-                    if (this.activePointers.size === 2) {
-                        this.isPinching = true;
-                        const points = Array.from(this.activePointers.values());
-                        this.pinchStartDistance = this.getDistance(points[0], points[1]);
-                        this.pinchStartScale = this.scale;
-                        this.pinchStartCenter = this.getMidpoint(points[0], points[1]);
-                        this.pinchStartOffset = { x: this.offset.x, y: this.offset.y };
-                    }
-                    this.render();
-                    return;
-                }
+        // Two-finger pinch-zoom (available in ALL modes for touch)
+        if (isTouch && this.activePointers.size >= 2) {
+            // Cancel any in-progress drawing
+            if (this.isDrawing) {
+                this.currentStroke = null;
+                this.isDrawing = false;
             }
+            this.isPanning = false;
+            this.container?.classList.remove('panning');
+            this._startPinch();
+            return;
+        }
 
+        // Move tool: single pointer pan
+        if (this.currentTool === 'move') {
             this.isPanning = true;
             this.panStart = { x: e.clientX, y: e.clientY };
             this.container?.classList.add('panning');
@@ -322,27 +328,7 @@ export class InkEditor {
             return;
         }
 
-        if (e.pointerType === 'touch') {
-            this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-            if (this.activePointers.size >= 2) {
-                // Multiple fingers: only allow pinch-zoom, cancel any drawing
-                if (this.isDrawing) {
-                    this.currentStroke = null;
-                    this.isDrawing = false;
-                }
-                if (this.activePointers.size === 2) {
-                    this.isPinching = true;
-                    const points = Array.from(this.activePointers.values());
-                    this.pinchStartDistance = this.getDistance(points[0], points[1]);
-                    this.pinchStartScale = this.scale;
-                    this.pinchStartCenter = this.getMidpoint(points[0], points[1]);
-                    this.pinchStartOffset = { x: this.offset.x, y: this.offset.y };
-                }
-                this.render();
-                return;
-            }
-        }
-        
+
         const point = this.getPoint(e);
         this.isDrawing = true;
         this.lastPoint = point;
@@ -366,6 +352,18 @@ export class InkEditor {
         } else {
             this.startStroke(point);
         }
+    }
+
+    _startPinch() {
+        if (this.activePointers.size === 2) {
+            this.isPinching = true;
+            const points = Array.from(this.activePointers.values());
+            this.pinchStartDistance = this.getDistance(points[0], points[1]);
+            this.pinchStartScale = this.scale;
+            this.pinchStartCenter = this.getMidpoint(points[0], points[1]);
+            this.pinchStartOffset = { x: this.offset.x, y: this.offset.y };
+        }
+        this.render();
     }
 
     isPalmTouch(e) {
@@ -434,7 +432,7 @@ export class InkEditor {
             this.renderEraserCursor();
         }
 
-        // Right-click panning
+        // Panning (move tool or right-click)
         if (this.isPanning && !this.isPinching) {
             const dx = e.clientX - this.panStart.x;
             const dy = e.clientY - this.panStart.y;
@@ -525,6 +523,14 @@ export class InkEditor {
     handlePointerUp(e) {
         e.preventDefault();
 
+        // Always clean up touch pointer tracking
+        if (e.pointerType === 'touch' && this.activePointers.has(e.pointerId)) {
+            this.activePointers.delete(e.pointerId);
+            if (this.activePointers.size < 2) {
+                this.isPinching = false;
+            }
+        }
+
         // End selection moving
         if (this.isMovingSelection && this.moveStartPoint) {
             this.isMovingSelection = false;
@@ -538,8 +544,8 @@ export class InkEditor {
             return;
         }
 
-        // End panning
-        if (this.isPanning && (e.button === 2 || this.currentTool === 'move')) {
+        // End panning (for move tool, right-click pan, or touch pan)
+        if (this.isPanning) {
             this.isPanning = false;
             this.container?.classList.remove('panning');
             this.updateScrollbars();
@@ -552,37 +558,12 @@ export class InkEditor {
             this.clearUI();
         }
 
-        if (e.pointerType === 'touch' && this.activePointers.has(e.pointerId)) {
-            this.activePointers.delete(e.pointerId);
-            if (this.activePointers.size < 2) {
-                this.isPinching = false;
-            }
-            // Don't start drawing after pinch ends
-            if (this.activePointers.size === 1 && !this.isDrawing) {
-                return;
-            }
-        }
-
-        if (this.currentTool === 'move' && this.isPanning && this.activePointers.size < 2) {
-            this.isPanning = false;
-            this.container?.classList.remove('panning');
-            this.updateScrollbars();
-            return;
-        }
-
         if (!this.isDrawing) return;
         
         // Get final coalesced events to capture stroke end accurately
         const coalescedEvents = e.getCoalescedEvents?.() || [e];
         const point = this.getPoint(e);
         this.isDrawing = false;
-        
-        // Validate stroke before finishing - reject spiral/accidental drawings
-        if (this.currentStroke && this.isAccidentalStroke(this.currentStroke)) {
-            this.currentStroke = null;
-            this.render();
-            return;
-        }
         
         if (this.currentTool === 'select') {
             this.handleSelectionEnd(point);
@@ -601,31 +582,6 @@ export class InkEditor {
         this.shapeStart = null;
     }
 
-    isAccidentalStroke(stroke) {
-        if (!stroke || !stroke.points || stroke.points.length < 3) return false;
-        
-        const points = stroke.points;
-        const duration = points[points.length - 1].timestamp - points[0].timestamp;
-        
-        // Very fast strokes with many points might be accidental
-        if (duration < 100 && points.length > 20) return true;
-        
-        // Check for spiral pattern (high angular change rate)
-        let totalAngleChange = 0;
-        for (let i = 2; i < points.length; i++) {
-            const angle1 = Math.atan2(points[i-1].y - points[i-2].y, points[i-1].x - points[i-2].x);
-            const angle2 = Math.atan2(points[i].y - points[i-1].y, points[i].x - points[i-1].x);
-            let diff = Math.abs(angle2 - angle1);
-            if (diff > Math.PI) diff = 2 * Math.PI - diff;
-            totalAngleChange += diff;
-        }
-        
-        // If total rotation > 3 full circles in short time, likely accidental
-        if (totalAngleChange > 6 * Math.PI && duration < 500) return true;
-        
-        return false;
-    }
-    
     handleWheel(e) {
         e.preventDefault();
         
@@ -1383,12 +1339,18 @@ export class InkEditor {
         const pattern = this.pageStyle?.pattern || 'blank';
         if (pattern === 'blank') return;
 
+        // Determine line color based on background brightness
+        const isDarkBg = this._isColorDark(color);
+        const lineAlpha = isDarkBg ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+        const dotAlpha = isDarkBg ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)';
+        const staffAlpha = isDarkBg ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)';
+
         const spacing = 24;
         const scaledSpacing = spacing * scale;
         const startX = offset.x % scaledSpacing;
         const startY = offset.y % scaledSpacing;
 
-        ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+        ctx.strokeStyle = lineAlpha;
         ctx.lineWidth = 1;
 
         if (pattern === 'lines') {
@@ -1417,7 +1379,7 @@ export class InkEditor {
 
         if (pattern === 'dots') {
             const dotRadius = 1.5 * scale;
-            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillStyle = dotAlpha;
             for (let x = startX; x < width; x += scaledSpacing) {
                 for (let y = startY; y < height; y += scaledSpacing) {
                     ctx.beginPath();
@@ -1454,7 +1416,7 @@ export class InkEditor {
             const totalStaffHeight = staffHeight + groupSpacing;
             const staffStartY = offset.y % totalStaffHeight;
 
-            ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+            ctx.strokeStyle = staffAlpha;
 
             for (let staffY = staffStartY - totalStaffHeight; staffY < height; staffY += totalStaffHeight) {
                 for (let i = 0; i < 5; i++) {
@@ -1481,6 +1443,20 @@ export class InkEditor {
 
     refreshLayout() {
         this.setupCanvasSize();
+    }
+
+    /**
+     * Check if a hex color is dark (luminance < 0.5).
+     */
+    _isColorDark(hex) {
+        if (!hex || typeof hex !== 'string') return false;
+        hex = hex.replace('#', '');
+        if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance < 0.5;
     }
 
     getViewportState() {

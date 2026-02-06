@@ -93,17 +93,6 @@ export class TextEditor {
         document.getElementById('list-btn')?.addEventListener('click', () => this.insertList());
         document.getElementById('quote-btn')?.addEventListener('click', () => this.insertQuote());
 
-        // Text color presets
-        document.querySelectorAll('.text-toolbar [data-text-color]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const color = btn.dataset.textColor;
-                if (color) {
-                    document.execCommand('foreColor', false, color);
-                    this.handleInput();
-                }
-            });
-        });
-        
         // NES toggle
         const nesToggle = document.getElementById('nes-toggle');
         nesToggle?.addEventListener('change', () => {
@@ -287,19 +276,39 @@ export class TextEditor {
         const color = this.pageStyle?.color || '#ffffff';
 
         const patternBackground = this.getPatternBackground(pattern, color);
+        const textColor = this.getContrastColor(color);
         targetElements.forEach(el => {
             el.style.backgroundColor = color;
             el.style.backgroundImage = patternBackground;
             el.style.backgroundSize = pattern === 'grid' ? '24px 24px' : pattern === 'lines' ? '100% 24px' : 'auto';
+            el.style.color = textColor;
         });
     }
 
+    /**
+     * Returns black or white depending on which contrasts more with the given hex color.
+     */
+    getContrastColor(hex) {
+        if (!hex || typeof hex !== 'string') return '#000000';
+        hex = hex.replace('#', '');
+        if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        // Relative luminance (ITU-R BT.709)
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        return luminance > 0.5 ? '#000000' : '#ffffff';
+    }
+
     getPatternBackground(pattern, color) {
+        const lineColor = this.getContrastColor(color) === '#ffffff'
+            ? 'rgba(255,255,255,0.12)'
+            : 'rgba(0,0,0,0.08)';
         if (pattern === 'grid') {
-            return `linear-gradient(to right, rgba(0,0,0,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.08) 1px, transparent 1px)`;
+            return `linear-gradient(to right, ${lineColor} 1px, transparent 1px), linear-gradient(to bottom, ${lineColor} 1px, transparent 1px)`;
         }
         if (pattern === 'lines') {
-            return `linear-gradient(to bottom, rgba(0,0,0,0.08) 1px, transparent 1px)`;
+            return `linear-gradient(to bottom, ${lineColor} 1px, transparent 1px)`;
         }
         return 'none';
     }

@@ -21,9 +21,9 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_NAME = 'kitten-note-v1-u1';
-const STATIC_CACHE = 'kitten-note-static-v1-u1';
-const DYNAMIC_CACHE = 'kitten-note-dynamic-v1-u1';
+const CACHE_NAME = 'kitten-note-v1-u2';
+const STATIC_CACHE = 'kitten-note-static-v1-u2';
+const DYNAMIC_CACHE = 'kitten-note-dynamic-v1-u2';
 
 // Core assets to cache immediately
 const STATIC_ASSETS = [
