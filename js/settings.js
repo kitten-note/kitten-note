@@ -22,6 +22,7 @@
  */
 
 import { Toast } from './toast.js';
+import { OPFSBlockStorage } from './opfs-storage.js';
 
 export class SettingsManager {
     constructor(app) {
@@ -58,6 +59,7 @@ export class SettingsManager {
                 this.switchTab(tab.dataset.tab);
             });
         });
+        this.setupSettingsTabsWheelScroll();
         
         // Theme mode
         this.modal?.querySelectorAll('.theme-option').forEach(btn => {
@@ -156,6 +158,12 @@ export class SettingsManager {
 
         // Backup settings
         this.setupBackupSettings();
+
+        // Sync settings
+        this.setupSyncSettings();
+
+        // Storage settings
+        this.setupStorageSettings();
         
         // Developer settings
         this.setupDeveloperSettings();
@@ -281,6 +289,9 @@ export class SettingsManager {
         }
         this.updateBackupLastLabel();
         
+        // WebDAV settings
+        this.applyWebDAVSettings();
+
         // Update UI to reflect current settings
         this.updateSettingsUI();
     }
@@ -424,6 +435,12 @@ export class SettingsManager {
             panel.classList.toggle('active', panel.id === `${tabId}-panel`);
             panel.classList.toggle('hidden', panel.id !== `${tabId}-panel`);
         });
+
+        // Scroll settings content to top
+        const content = this.modal?.querySelector('.settings-content');
+        if (content) {
+            content.scrollTop = 0;
+        }
     }
     
     showModal() {
@@ -431,6 +448,31 @@ export class SettingsManager {
         this.updateDeviceInfo();
         this.updateModelStatus();
         this.updateDeveloperInfo();
+    }
+
+    setupSettingsTabsWheelScroll() {
+        const tabs = this.modal?.querySelector('.settings-tabs');
+        if (!tabs || tabs.dataset.wheelBound === '1') return;
+
+        tabs.addEventListener('wheel', (e) => {
+            const hasHorizontalIntent = Math.abs(e.deltaX) > 0;
+            const hasVerticalIntent = Math.abs(e.deltaY) > 0;
+            if (!hasHorizontalIntent && !hasVerticalIntent) return;
+
+            const delta = hasHorizontalIntent ? e.deltaX : e.deltaY;
+            if (delta === 0) return;
+
+            const canScrollLeft = tabs.scrollLeft > 0;
+            const canScrollRight = tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth;
+            const scrollingLeft = delta < 0;
+            const canScroll = (scrollingLeft && canScrollLeft) || (!scrollingLeft && canScrollRight);
+            if (!canScroll) return;
+
+            e.preventDefault();
+            tabs.scrollBy({ left: delta, behavior: 'smooth' });
+        }, { passive: false });
+
+        tabs.dataset.wheelBound = '1';
     }
     
     hideModal() {
@@ -580,6 +622,106 @@ export class SettingsManager {
         this.app.Toast?.show('自定义模型已移除', 'success');
     }
 
+    // ---- Sync Settings ----
+
+    setupSyncSettings() {
+        // Open sync wizard button in settings
+        document.getElementById('sync-open-wizard-btn')?.addEventListener('click', () => {
+            this.hideModal();
+            this.app.syncManager?.showSyncDialog();
+        });
+
+        // WebDAV settings
+        const webdavSaveBtn = document.getElementById('webdav-save-btn');
+        const webdavTestBtn = document.getElementById('webdav-test-btn');
+
+        webdavSaveBtn?.addEventListener('click', () => {
+            this.saveWebDAVConfig();
+        });
+
+        webdavTestBtn?.addEventListener('click', () => {
+            this.testWebDAVConnection();
+        });
+    }
+
+    saveWebDAVConfig() {
+        const url = document.getElementById('webdav-url')?.value?.trim() || '';
+        const username = document.getElementById('webdav-username')?.value?.trim() || '';
+        const password = document.getElementById('webdav-password')?.value || '';
+        const interval = parseInt(document.getElementById('webdav-interval')?.value || '30', 10);
+        const autoSync = document.getElementById('webdav-auto-sync')?.checked || false;
+
+        this.settings.webdavUrl = url;
+        this.settings.webdavUsername = username;
+        this.settings.webdavPassword = password;
+        this.settings.webdavPath = '/kitten-note';
+        this.settings.webdavInterval = Math.max(1, Math.min(1440, interval));
+        this.settings.webdavAutoSync = autoSync;
+        this.saveSettings();
+
+        this.app.Toast?.show('WebDAV 配置已保存', 'success');
+        this.app.logger?.info('WebDAV configuration saved.');
+    }
+
+    async testWebDAVConnection() {
+        const url = document.getElementById('webdav-url')?.value?.trim();
+        const username = document.getElementById('webdav-username')?.value?.trim();
+        const password = document.getElementById('webdav-password')?.value;
+
+        if (!url) {
+            this.app.Toast?.show('请输入 WebDAV 服务器地址', 'warning');
+            return;
+        }
+
+        try {
+            const testUrl = url.replace(/\/$/, '') + '/kitten-note/';
+            const response = await fetch(testUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    'Authorization': 'Basic ' + btoa(username + ':' + password),
+                    'Depth': '0'
+                }
+            });
+
+            if (response.ok || response.status === 207) {
+                this.app.Toast?.show('WebDAV 连接成功', 'success');
+                this.app.logger?.info('WebDAV connection test passed.');
+            } else if (response.status === 404) {
+                this.app.Toast?.show('WebDAV 连接成功，目录不存在将自动创建', 'info');
+                this.app.logger?.info('WebDAV server reachable, directory will be created.');
+            } else {
+                this.app.Toast?.show(`WebDAV 连接失败：${response.status} ${response.statusText}`, 'error');
+            }
+        } catch (error) {
+            this.app.Toast?.show('WebDAV 连接失败：' + error.message, 'error');
+            this.app.logger?.warn('WebDAV connection test failed.', { error: error.message });
+        }
+    }
+
+    applyWebDAVSettings() {
+        const urlInput = document.getElementById('webdav-url');
+        const usernameInput = document.getElementById('webdav-username');
+        const passwordInput = document.getElementById('webdav-password');
+        const intervalInput = document.getElementById('webdav-interval');
+        const autoSyncToggle = document.getElementById('webdav-auto-sync');
+        const lastSyncLabel = document.getElementById('webdav-last-sync-time');
+
+        if (urlInput) urlInput.value = this.settings.webdavUrl || '';
+        if (usernameInput) usernameInput.value = this.settings.webdavUsername || '';
+        if (passwordInput) passwordInput.value = this.settings.webdavPassword || '';
+        if (intervalInput) intervalInput.value = this.settings.webdavInterval || 30;
+        if (autoSyncToggle) autoSyncToggle.checked = !!this.settings.webdavAutoSync;
+        if (lastSyncLabel) {
+            lastSyncLabel.textContent = this.settings.webdavLastSync
+                ? new Date(this.settings.webdavLastSync).toLocaleString()
+                : '未同步';
+        }
+    }
+
+    isWebDAVConfigured() {
+        return !!(this.settings.webdavUrl && this.settings.webdavUsername);
+    }
+
     setupBackupSettings() {
         const exportBtn = document.getElementById('backup-export-btn');
         const importBtn = document.getElementById('backup-import-btn');
@@ -620,14 +762,284 @@ export class SettingsManager {
         label.textContent = date.toLocaleString();
     }
 
+    // ---- Storage Settings ----
+
+    setupStorageSettings() {
+        const engineSelect = document.getElementById('storage-engine-select');
+        const migrateBtn = document.getElementById('storage-migrate-btn');
+        const recoverBtn = document.getElementById('storage-recover-btn');
+        const recoverResult = document.getElementById('storage-recover-result');
+        const currentEngineLabel = document.getElementById('storage-current-engine');
+        const opfsUnsupported = document.getElementById('storage-opfs-unsupported');
+        const migrationWarning = document.getElementById('storage-migration-warning');
+        const migrationText = document.getElementById('storage-migration-text');
+        const progressContainer = document.getElementById('storage-migration-progress-container');
+        const progressBar = document.getElementById('storage-migration-progress-bar');
+        const progressText = document.getElementById('storage-migration-progress-text');
+        const healthSection = document.getElementById('storage-opfs-health');
+        const verifyBtn = document.getElementById('opfs-verify-btn');
+
+        if (!engineSelect) return;
+
+        const opfsSupported = OPFSBlockStorage.isSupported();
+        if (!opfsSupported) {
+            opfsUnsupported?.classList.remove('hidden');
+            // Disable OPFS option
+            const opfsOption = engineSelect.querySelector('option[value="opfs"]');
+            if (opfsOption) opfsOption.disabled = true;
+        }
+
+        // Set current engine display
+        let currentEngine = this.app.db.storageEngine || 'indexeddb';
+        let isMigrating = false;
+        if (currentEngineLabel) {
+            currentEngineLabel.textContent = currentEngine === 'opfs' ? 'OPFS（块存储）' : 'IndexedDB';
+        }
+        engineSelect.value = currentEngine;
+
+        // Show health section if OPFS is active
+        if (currentEngine === 'opfs' && healthSection) {
+            healthSection.classList.remove('hidden');
+            this.refreshOPFSHealth();
+        }
+
+        // Enable migrate button only when selection differs from current
+        const updateMigrateState = () => {
+            const selected = engineSelect.value;
+            migrateBtn.disabled = isMigrating || selected === currentEngine || (selected === 'opfs' && !opfsSupported);
+        };
+        engineSelect.addEventListener('change', updateMigrateState);
+        updateMigrateState();
+
+        // Migration
+        migrateBtn?.addEventListener('click', async () => {
+            const target = engineSelect.value;
+            const dirLabel = target === 'opfs' ? 'OPFS（块存储）' : 'IndexedDB';
+
+            if (!confirm(`确定要将存储引擎迁移到 ${dirLabel} 吗？迁移过程中请勿关闭应用程序。`)) return;
+
+            this.app.logger?.info(`storage migration to ${dirLabel} has begun.`);
+            isMigrating = true;
+            updateMigrateState();
+            migrationWarning?.classList.remove('hidden');
+            progressContainer?.classList.remove('hidden');
+            if (migrationText) migrationText.textContent = '正在迁移...';
+
+            try {
+                const result = await this.app.db.migrateStorage(target, (current, total) => {
+                    const pct = Math.round((current / total) * 100);
+                    if (progressBar) progressBar.style.width = pct + '%';
+                    if (progressText) progressText.textContent = `${pct}% (${current}/${total})`;
+                });
+
+                if (result.success) {
+                    if (migrationText) migrationText.textContent = `迁移完成，已迁移 ${result.migratedCount} 个笔记`;
+                    if (currentEngineLabel) currentEngineLabel.textContent = dirLabel;
+                    currentEngine = target;
+                    engineSelect.value = target;
+                    Toast.show('存储引擎迁移完成', 'success');
+                    this.app.logger?.info(`storage migration complete: ${result.migratedCount} notes moved to ${dirLabel}.`);
+
+                    if (target === 'indexeddb' && migrationText) {
+                        migrationText.textContent += '（提示：OPFS 仅存储笔记内容，核心数据仍在 IndexedDB）';
+                    }
+
+                    // Update health section visibility
+                    if (target === 'opfs' && healthSection) {
+                        healthSection.classList.remove('hidden');
+                        this.refreshOPFSHealth();
+                    } else if (healthSection) {
+                        healthSection.classList.add('hidden');
+                    }
+                } else {
+                    if (migrationText) migrationText.textContent = `迁移完成（有 ${result.errors.length} 个错误）`;
+                    Toast.show(`迁移完成，但有 ${result.errors.length} 个错误`, 'warning');
+                }
+            } catch (e) {
+                console.error('Migration failed:', e);
+                if (migrationText) migrationText.textContent = '迁移失败: ' + e.message;
+                Toast.show('迁移失败: ' + e.message, 'error');
+            } finally {
+                migrationWarning?.classList.add('hidden');
+                isMigrating = false;
+                updateMigrateState();
+            }
+        });
+
+        // Recovery wizard: recover notes from OPFS when IndexedDB data is lost
+        recoverBtn?.addEventListener('click', async () => {
+            if (!confirm('将尝试从 OPFS 读取零散笔记文件并重建到 IndexedDB，是否继续？')) return;
+
+            recoverBtn.disabled = true;
+            if (recoverResult) recoverResult.textContent = '正在扫描 OPFS 数据...';
+            progressContainer?.classList.remove('hidden');
+            migrationWarning?.classList.remove('hidden');
+            if (migrationText) migrationText.textContent = '正在执行数据恢复...';
+
+            try {
+                const result = await this.app.db.recoverFromOPFS((current, total) => {
+                    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                    if (progressBar) progressBar.style.width = pct + '%';
+                    if (progressText) progressText.textContent = `${pct}% (${current}/${total})`;
+                });
+
+                if (result.success) {
+                    const msg = `恢复完成：成功 ${result.recoveredCount} 条，跳过 ${result.skippedCount} 条`;
+                    if (recoverResult) recoverResult.textContent = msg;
+                    if (migrationText) migrationText.textContent = msg;
+                    Toast.show('数据恢复完成', 'success');
+                } else {
+                    const firstErr = result.errors?.[0]?.error || '未发现可恢复数据';
+                    const msg = `恢复失败：${firstErr}`;
+                    if (recoverResult) recoverResult.textContent = msg;
+                    if (migrationText) migrationText.textContent = msg;
+                    Toast.show(msg, 'warning');
+                }
+
+                // Recovery always targets IndexedDB
+                currentEngine = this.app.db.storageEngine || 'indexeddb';
+                engineSelect.value = currentEngine;
+                if (currentEngineLabel) {
+                    currentEngineLabel.textContent = currentEngine === 'opfs' ? 'OPFS（块存储）' : 'IndexedDB';
+                }
+                updateMigrateState();
+            } catch (e) {
+                const msg = '恢复失败: ' + (e?.message || e);
+                if (recoverResult) recoverResult.textContent = msg;
+                if (migrationText) migrationText.textContent = msg;
+                Toast.show(msg, 'error');
+            } finally {
+                recoverBtn.disabled = false;
+                migrationWarning?.classList.add('hidden');
+            }
+        });
+
+        // Verify integrity
+        verifyBtn?.addEventListener('click', async () => {
+            const resultEl = document.getElementById('opfs-verify-result');
+            if (resultEl) resultEl.textContent = '正在验证...';
+
+            try {
+                const issues = await this.app.db.opfs?.verifyIntegrity();
+                if (!issues || issues.length === 0) {
+                    if (resultEl) resultEl.textContent = '✅ 所有数据完整性验证通过';
+                    this.app.logger?.info('OPFS integrity check passed with flying colors.');
+                } else {
+                    if (resultEl) resultEl.textContent = `⚠️ 发现 ${issues.length} 个问题`;
+                    this.app.logger?.warn(`OPFS integrity check found ${issues.length} issue(s).`);
+                    console.warn('[OPFS Verify]', issues);
+                }
+            } catch (e) {
+                if (resultEl) resultEl.textContent = '验证失败: ' + e.message;
+            }
+        });
+
+        // Defragment
+        const defragBtn = document.getElementById('opfs-defrag-btn');
+        defragBtn?.addEventListener('click', async () => {
+            const resultEl = document.getElementById('opfs-defrag-result');
+            if (!this.app.db.opfs) {
+                if (resultEl) resultEl.textContent = 'OPFS 未启用';
+                return;
+            }
+
+            if (!confirm('碎片整理会重写所有块文件以回收空间，过程中请勿关闭应用。确定继续？')) return;
+
+            defragBtn.disabled = true;
+            if (resultEl) resultEl.textContent = '正在整理...';
+
+            try {
+                const stats = await this.app.db.opfs.defragment((pct, msg) => {
+                    if (resultEl) resultEl.textContent = `${msg} (${pct}%)`;
+                });
+
+                const savedStr = this.formatBytes(stats.spaceSaved);
+                if (resultEl) resultEl.textContent =
+                    `✅ 完成：处理 ${stats.notesProcessed} 个笔记，移除 ${stats.blocksRemoved} 个多余块，` +
+                    `清理 ${stats.orphanDirsRemoved} 个孤立目录，回收 ${savedStr}`;
+
+                this.app.logger?.info(`defragmented OPFS: removed ${stats.blocksRemoved} extra blocks, reclaimed ${savedStr}.`);
+
+                // Refresh health display
+                this.refreshOPFSHealth();
+            } catch (e) {
+                console.error('[OPFS Defrag]', e);
+                if (resultEl) resultEl.textContent = '碎片整理失败: ' + e.message;
+            } finally {
+                defragBtn.disabled = false;
+            }
+        });
+    }
+
+    async refreshOPFSHealth() {
+        if (!this.app.db.opfs) return;
+
+        try {
+            const health = await this.app.db.opfs.getHealthInfo();
+
+            const setEl = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = text;
+            };
+
+            setEl('opfs-note-count', String(health.noteCount));
+            setEl('opfs-total-size', this.formatBytes(health.totalSize));
+            setEl('opfs-total-blocks', String(health.totalBlocks));
+            setEl('opfs-block-size', this.formatBytes(health.blockSize));
+            setEl('opfs-fragmented', String(health.fragmentedNotes));
+
+            // Note details list
+            const listEl = document.getElementById('opfs-notes-list');
+            if (listEl) {
+                if (health.notes.length === 0) {
+                    listEl.innerHTML = '<p>无 OPFS 笔记数据</p>';
+                } else {
+                    listEl.innerHTML = health.notes.map(n =>
+                        `<p style="margin: 2px 0; font-size: 0.85em;">` +
+                        `<code>${n.noteId.substring(0, 10)}...</code> ` +
+                        `${this.formatBytes(n.totalSize)} · ${n.blockCount} 块` +
+                        `${n.isFragmented ? ' <span style="color: var(--danger);">碎片</span>' : ''}` +
+                        `</p>`
+                    ).join('');
+                }
+            }
+        } catch (e) {
+            console.error('[OPFS Health]', e);
+        }
+    }
+
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const k = 1024;
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + units[i];
+    }
+
     async exportBackupZip() {
         try {
             const data = await this.app.db.exportAllData();
-            const payload = JSON.stringify(data, null, 2);
+
+            // Separate OPFS mirror from main payload to store as separate files in ZIP
+            const opfsMirror = data.opfsMirror || null;
+            const dataForJson = { ...data };
+            delete dataForJson.opfsMirror;
+
+            const payload = JSON.stringify(dataForJson, null, 2);
             const encoder = new TextEncoder();
             const files = [
                 { name: 'kittennote-backup.json', data: encoder.encode(payload) }
             ];
+
+            // Include OPFS mirror files in the ZIP
+            if (opfsMirror) {
+                for (const [path, fileData] of Object.entries(opfsMirror)) {
+                    files.push({
+                        name: `opfs-mirror/${path}`,
+                        data: fileData instanceof Uint8Array ? fileData : encoder.encode(String(fileData))
+                    });
+                }
+            }
 
             const zipData = this.buildZip(files);
             const blob = new Blob([zipData], { type: 'application/zip' });
@@ -645,9 +1057,11 @@ export class SettingsManager {
             this.updateBackupLastLabel();
 
             Toast.show('备份已下载', 'success');
+            this.app.logger?.info('a backup archive was created and downloaded.');
         } catch (error) {
             console.error('Backup export failed:', error);
             Toast.show('备份失败: ' + error.message, 'error');
+            this.app.logger?.error('backup export stumbled.', error);
         }
     }
 
@@ -667,6 +1081,20 @@ export class SettingsManager {
 
             const json = new TextDecoder().decode(backupData);
             const data = JSON.parse(json);
+
+            // Check for OPFS mirror files in the backup ZIP
+            const opfsMirrorFiles = {};
+            const mirrorPrefix = 'opfs-mirror/';
+            for (const [path, fileData] of Object.entries(entries)) {
+                if (path.startsWith(mirrorPrefix)) {
+                    const relativePath = path.substring(mirrorPrefix.length);
+                    opfsMirrorFiles[relativePath] = fileData;
+                }
+            }
+            if (Object.keys(opfsMirrorFiles).length > 0) {
+                data.opfsMirror = opfsMirrorFiles;
+            }
+
             await this.app.db.importAllData(data);
 
             const importedSettings = await this.app.db.getSetting('appSettings');
@@ -682,10 +1110,12 @@ export class SettingsManager {
             this.updateBackupLastLabel();
 
             Toast.show('已恢复备份，页面即将刷新', 'success');
+            this.app.logger?.info('a backup was restored successfully. reloading soon.');
             setTimeout(() => location.reload(), 1200);
         } catch (error) {
             console.error('Backup import failed:', error);
             Toast.show('恢复失败: ' + error.message, 'error');
+            this.app.logger?.error('backup import failed.', error);
         }
     }
 
@@ -913,7 +1343,7 @@ export class SettingsManager {
         
         // Pressure sampling interval
         const pressureSampling = document.getElementById('pressure-sampling');
-        const samplingValue = document.getElementById('sampling-value');
+        const samplingValue = document.getElementById('pressure-sampling-value');
         pressureSampling?.addEventListener('input', (e) => {
             const value = parseInt(e.target.value);
             if (samplingValue) samplingValue.textContent = `${value}ms`;
@@ -936,10 +1366,10 @@ export class SettingsManager {
         
         // Straightening threshold
         const straighteningThreshold = document.getElementById('straightening-threshold');
-        const thresholdValue = document.getElementById('threshold-value');
+        const thresholdValue = document.getElementById('straightening-value');
         straighteningThreshold?.addEventListener('input', (e) => {
             const value = parseInt(e.target.value);
-            if (thresholdValue) thresholdValue.textContent = value;
+            if (thresholdValue) thresholdValue.textContent = `${value}°`;
             this.settings.straighteningThreshold = value;
             this.saveSettings();
             if (this.app.inkEditor) {
@@ -1032,7 +1462,7 @@ export class SettingsManager {
         }
         
         const pressureSampling = document.getElementById('pressure-sampling');
-        const samplingValue = document.getElementById('sampling-value');
+        const samplingValue = document.getElementById('pressure-sampling-value');
         if (pressureSampling) {
             pressureSampling.value = this.settings.pressureSamplingInterval || 0;
         }
@@ -1046,12 +1476,12 @@ export class SettingsManager {
         }
         
         const straighteningThreshold = document.getElementById('straightening-threshold');
-        const thresholdValue = document.getElementById('threshold-value');
+        const thresholdValue = document.getElementById('straightening-value');
         if (straighteningThreshold) {
             straighteningThreshold.value = this.settings.straighteningThreshold || 5;
         }
         if (thresholdValue) {
-            thresholdValue.textContent = this.settings.straighteningThreshold || 5;
+            thresholdValue.textContent = `${this.settings.straighteningThreshold || 5}°`;
         }
         
         // Apply to ink editor

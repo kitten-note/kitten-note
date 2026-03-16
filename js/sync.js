@@ -1100,6 +1100,7 @@ export class SyncManager {
         });
         
         this.app.Toast?.show('连接成功！正在同步...', 'success');
+        this.app.logger?.info('a peer device connected for sync.');
         
         // Auto-start sync after connection
         await this.startSync();
@@ -1113,6 +1114,15 @@ export class SyncManager {
             }
 
             this.syncInProgress = true;
+            this.syncStartTime = Date.now();
+            this.app.logger?.info('sync started. sending data to the peer...');
+
+            // Hide sync button, show progress
+            const syncBtn = document.getElementById('sync-start-sync');
+            const progressArea = document.getElementById('sync-progress-area');
+            if (syncBtn) syncBtn.classList.add('hidden');
+            if (progressArea) progressArea.classList.remove('hidden');
+            this.updateSyncProgress(0, '正在发送同步请求...');
             
             // Send sync request
             await this.sendMessage({
@@ -1121,13 +1131,38 @@ export class SyncManager {
                 timestamp: new Date().toISOString()
             });
             
-            this.app.Toast?.show('同步请求已发送', 'info');
+            this.updateSyncProgress(10, '同步请求已发送，等待对方响应...');
             
         } catch (error) {
             console.error('Sync failed:', error);
             this.app.Toast?.show('同步失败: ' + error.message, 'error');
             this.syncInProgress = false;
+            this.resetSyncProgressUI();
         }
+    }
+
+    updateSyncProgress(percent, text) {
+        const bar = document.getElementById('sync-progress-bar');
+        const label = document.getElementById('sync-progress-text');
+        if (bar) bar.style.width = `${percent}%`;
+        if (label && text) {
+            let speedInfo = '';
+            if (this.syncStartTime && percent > 0) {
+                const elapsed = (Date.now() - this.syncStartTime) / 1000;
+                if (elapsed > 0.5) {
+                    speedInfo = ` (${elapsed.toFixed(1)}s)`;
+                }
+            }
+            label.textContent = text + speedInfo;
+        }
+    }
+
+    resetSyncProgressUI() {
+        const syncBtn = document.getElementById('sync-start-sync');
+        const progressArea = document.getElementById('sync-progress-area');
+        if (syncBtn) syncBtn.classList.remove('hidden');
+        if (progressArea) progressArea.classList.add('hidden');
+        this.updateSyncProgress(0, '');
     }
     
     // ======== Sync Protocol ========
@@ -1144,19 +1179,24 @@ export class SyncManager {
                     break;
                 case 'sync_ack':
                     console.log('Sync acknowledged by peer');
+                    this.updateSyncProgress(80, '正在合并对方数据...');
                     // Bidirectional: sync_ack may include peer's data
                     if (message.notes || message.notebooks || message.folders) {
                         const counts = await this.mergeRemoteData(message);
+                        this.updateSyncProgress(100, `同步完成：${counts.folders} 文件夹, ${counts.notebooks} 笔记本, ${counts.notes} 笔记`);
                         this.app.Toast?.show(`同步完成！${counts.folders} 文件夹, ${counts.notebooks} 笔记本, ${counts.notes} 笔记`, 'success');
                         await this.app.directoryTree?.render();
                     } else {
+                        this.updateSyncProgress(100, '同步完成！');
                         this.app.Toast?.show('同步完成！', 'success');
                     }
                     this.syncInProgress = false;
+                    this.app.logger?.info('sync completed successfully!');
                     
                     // Close wizard and cleanup after successful sync
                     setTimeout(() => {
                         this.closeWizard();
+                        this.resetSyncProgressUI();
                     }, 1500);
                     break;
             }
@@ -1174,12 +1214,22 @@ export class SyncManager {
         }
 
         this.syncInProgress = true;
+        this.syncStartTime = Date.now();
+
+        // Show progress on receiving end too
+        const syncBtn = document.getElementById('sync-start-sync');
+        const progressArea = document.getElementById('sync-progress-area');
+        if (syncBtn) syncBtn.classList.add('hidden');
+        if (progressArea) progressArea.classList.remove('hidden');
+        this.updateSyncProgress(20, '正在准备本地数据...');
 
         try {
             // Get all data to send
             const notes = await this.db.getAllNotes();
             const notebooks = await this.db.getAllNotebooks();
             const folders = await this.db.getAllFolders();
+            
+            this.updateSyncProgress(40, '正在发送数据...');
             
             await this.sendMessage({
                 type: 'sync_data',
@@ -1188,19 +1238,25 @@ export class SyncManager {
                 folders: folders,
                 timestamp: new Date().toISOString()
             });
+
+            this.updateSyncProgress(60, '数据已发送，等待确认...');
         } catch (error) {
             console.error('Failed to send sync data:', error);
             this.syncInProgress = false;
             this.app.Toast?.show('发送同步数据失败', 'error');
+            this.resetSyncProgressUI();
         }
     }
     
     async handleSyncData(message) {
         this.syncInProgress = true;
+        this.updateSyncProgress(50, '正在合并远端数据...');
         
         try {
             const mergedCount = await this.mergeRemoteData(message);
             
+            this.updateSyncProgress(70, '正在发送本地数据...');
+
             // Send acknowledgment + own data back for bidirectional sync
             if (this.isChannelOpen()) {
                 const localNotes = await this.db.getAllNotes();
@@ -1215,6 +1271,7 @@ export class SyncManager {
                     timestamp: new Date().toISOString()
                 });
                 
+                this.updateSyncProgress(100, `同步完成：${mergedCount.folders} 文件夹, ${mergedCount.notebooks} 笔记本, ${mergedCount.notes} 笔记`);
                 this.app.Toast?.show(`接收完成：${mergedCount.folders} 文件夹, ${mergedCount.notebooks} 笔记本, ${mergedCount.notes} 笔记`, 'success');
             } else {
                 console.warn('Skipping sync ack because channel is closed.');
@@ -1228,12 +1285,14 @@ export class SyncManager {
             // Close wizard after successful sync
             setTimeout(() => {
                 this.closeWizard();
+                this.resetSyncProgressUI();
             }, 2000);
             
         } catch (error) {
             console.error('Sync data merge failed:', error);
             this.syncInProgress = false;
             this.app.Toast?.show('同步合并失败: ' + error.message, 'error');
+            this.resetSyncProgressUI();
         }
     }
     

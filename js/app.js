@@ -213,6 +213,7 @@ class KittenNoteApp {
         this.autoSaveTimer = null;
         this.autoSaveDelay = 2000; // 2 seconds
         this.lastSaveTime = null;
+        this.noteViewStates = new Map(); // Per-note view position memory
         
         this.init();
     }
@@ -500,7 +501,11 @@ class KittenNoteApp {
         
         // Sync button
         document.getElementById('sync-btn')?.addEventListener('click', () => {
-            this.syncManager.showSyncDialog();
+            if (this.settingsManager?.isWebDAVConfigured()) {
+                this.showSyncMethodChooser();
+            } else {
+                this.syncManager.showSyncDialog();
+            }
         });
         
         // Editor header buttons
@@ -1050,6 +1055,9 @@ class KittenNoteApp {
                 case 'a':
                     this.inkEditor.setTool('arrow');
                     break;
+                case 'm':
+                    this.inkEditor.setTool('move');
+                    break;
             }
         }
     }
@@ -1107,7 +1115,7 @@ class KittenNoteApp {
             const note = await this.db.createNote({
                 title,
                 type,
-                content: type === 'text' ? '' : { version: 1, strokes: [] },
+                content: type === 'text' ? '' : { version: 2, strokes: [], images: [] },
                 notebookId,
                 order: Date.now()
             });
@@ -1179,7 +1187,7 @@ class KittenNoteApp {
                 const item = document.createElement('div');
                 item.className = 'import-file-item';
                 item.innerHTML = `
-                    <i class="fas ${isZip ? 'fa-box-archive' : (file.name.endsWith('.ktnt') ? 'fa-pen-fancy' : 'fa-file-alt')}"></i>
+                    <i class="fas ${isZip ? 'fa-box-archive' : ((file.name.endsWith('.ktnt') || file.name.endsWith('.json')) ? 'fa-pen-fancy' : 'fa-file-alt')}"></i>
                     <span class="file-name">${file.name}</span>
                     <button class="remove-file" data-idx="${idx}"><i class="fas fa-times"></i></button>
                 `;
@@ -1234,8 +1242,19 @@ class KittenNoteApp {
                         break;
                     }
                     const content = await this.readFileContent(file);
-                    const isKtnt = file.name.endsWith('.ktnt');
-                    const title = file.name.replace(/\.(md|ktnt)$/i, '');
+                    const isJsonFile = file.name.endsWith('.json');
+                    let isKtnt = file.name.endsWith('.ktnt');
+                    const title = file.name.replace(/\.(md|ktnt|json)$/i, '');
+                    
+                    // Auto-detect .json files: check if they are ktnt format
+                    if (isJsonFile && !isKtnt) {
+                        try {
+                            const parsed = JSON.parse(content);
+                            if (parsed?.format === 'ktnt' || parsed?.content?.strokes) {
+                                isKtnt = true;
+                            }
+                        } catch { /* not valid JSON, treat as text */ }
+                    }
                     
                     let noteContent = content;
                     if (isKtnt) {
@@ -1248,6 +1267,22 @@ class KittenNoteApp {
                                 this.applyNotebookStyle(this.currentNotebook);
                             }
                             appliedPageStyle = true;
+                        }
+                        // Extract inlined images to separate blobs
+                        if (noteContent.images?.length) {
+                            for (const img of noteContent.images) {
+                                if (img.inlineData) {
+                                    const blobId = crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2);
+                                    await this.db.saveImageBlob({
+                                        id: blobId,
+                                        noteId: null, // will be updated after note creation
+                                        data: img.inlineData,
+                                        createdAt: new Date().toISOString()
+                                    });
+                                    img.blobId = blobId;
+                                    delete img.inlineData;
+                                }
+                            }
                         }
                     }
 
@@ -1376,6 +1411,23 @@ class KittenNoteApp {
     }
     
     async openNote(noteId) {
+        // Save current note's view state before switching
+        if (this.currentNote) {
+            if (this.currentNote.type === 'text') {
+                this.noteViewStates.set(this.currentNote.id, {
+                    type: 'text',
+                    scrollTop: this.textEditor.getScrollTop(),
+                    cursorOffset: this.textEditor.getCursorOffset(),
+                    fontSize: this.textEditor.getFontSize()
+                });
+            } else {
+                this.noteViewStates.set(this.currentNote.id, {
+                    type: 'ink',
+                    viewport: this.inkEditor.getViewportState()
+                });
+            }
+        }
+
         // Save current note if modified
         if (this.isModified && this.currentNote) {
             await this.save();
@@ -1433,8 +1485,26 @@ class KittenNoteApp {
             // Update tree selection
             this.directoryTree.selectNote(noteId);
 
-            // Restore session state (cursor/scroll/viewport)
-            if (this.pendingSessionRestore?.noteId === noteId) {
+            // Restore per-note view state (takes precedence over session restore)
+            const savedViewState = this.noteViewStates.get(noteId);
+            if (savedViewState) {
+                requestAnimationFrame(() => {
+                    if (savedViewState.type === 'text' && note.type === 'text') {
+                        if (typeof savedViewState.fontSize === 'number') {
+                            this.textEditor.setFontSize(savedViewState.fontSize);
+                        }
+                        if (typeof savedViewState.scrollTop === 'number') {
+                            this.textEditor.setScrollTop(savedViewState.scrollTop);
+                        }
+                        if (typeof savedViewState.cursorOffset === 'number') {
+                            this.textEditor.setCursorOffset(savedViewState.cursorOffset);
+                        }
+                    } else if (savedViewState.type === 'ink' && note.type === 'ink' && savedViewState.viewport) {
+                        this.inkEditor.setViewportState(savedViewState.viewport);
+                    }
+                });
+            } else if (this.pendingSessionRestore?.noteId === noteId) {
+                // Restore session state (cursor/scroll/viewport) for initial load
                 this.restoreSessionState(this.pendingSessionRestore);
                 this.pendingSessionRestore = null;
             }
@@ -1444,7 +1514,9 @@ class KittenNoteApp {
             // Fix focus/layout issues
             requestAnimationFrame(() => {
                 if (note.type === 'text') {
-                    this.textEditor.focusAtEnd();
+                    if (!savedViewState) {
+                        this.textEditor.focusAtEnd();
+                    }
                 } else {
                     this.inkEditor.refreshLayout();
                 }
@@ -1465,6 +1537,55 @@ class KittenNoteApp {
         document.getElementById('editor-container')?.classList.add('hidden');
         
         this.directoryTree.clearSelection();
+    }
+
+    showSyncMethodChooser() {
+        const dialog = document.createElement('div');
+        dialog.className = 'modal';
+        dialog.innerHTML = `
+            <div class="modal-overlay"></div>
+            <div class="modal-content" style="max-width: 400px;">
+                <div class="modal-header">
+                    <h2>选择同步方式</h2>
+                    <button class="modal-close"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body" style="padding: 20px;">
+                    <div class="backup-grid" style="gap: 12px;">
+                        <div class="backup-card" style="cursor: pointer; text-align: center;" id="sync-choose-webrtc">
+                            <i class="fas fa-qrcode" style="font-size: 24px; color: var(--primary); margin-bottom: 8px;"></i>
+                            <h5>WebRTC P2P</h5>
+                            <p class="setting-hint">扫码直连，局域网同步</p>
+                        </div>
+                        <div class="backup-card" style="cursor: pointer; text-align: center;" id="sync-choose-webdav">
+                            <i class="fas fa-cloud" style="font-size: 24px; color: var(--primary); margin-bottom: 8px;"></i>
+                            <h5>WebDAV</h5>
+                            <p class="setting-hint">通过 WebDAV 服务器同步</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        const close = () => {
+            dialog.remove();
+        };
+
+        dialog.querySelector('.modal-overlay')?.addEventListener('click', close);
+        dialog.querySelector('.modal-close')?.addEventListener('click', close);
+
+        dialog.querySelector('#sync-choose-webrtc')?.addEventListener('click', () => {
+            close();
+            this.syncManager?.showSyncDialog();
+        });
+
+        dialog.querySelector('#sync-choose-webdav')?.addEventListener('click', () => {
+            close();
+            this.settingsManager?.showModal();
+            this.settingsManager?.switchTab('sync');
+            Toast.show('请在 WebDAV 设置中配置并手动触发同步', 'info');
+        });
     }
     
     async save(isAutoSave = false) {

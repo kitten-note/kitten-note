@@ -42,18 +42,24 @@ export class InkEditor {
         this.lastPoint = null;
         
         // Content (log-based storage)
-        this.content = { version: 1, strokes: [] };
+        this.content = { version: 2, strokes: [], images: [] };
         this.undoStack = [];
         this.redoStack = [];
         this.maxUndoSize = 50;
         
         // Selection (lasso)
         this.selectedStrokes = [];
+        this.selectedImages = [];
         this.lassoPoints = [];
         this.isLassoing = false;
         this.selectionMenu = null;
         this.isMovingSelection = false;
         this.moveStartPoint = null;
+
+        // Image handling
+        this._imageCache = new Map(); // id -> HTMLImageElement
+        this._imageResizing = null; // { imageId, handle, startBounds }
+        this._imageRotating = null; // { imageId, startAngle }
         
         // Shape drawing
         this.shapeStart = null;
@@ -218,6 +224,16 @@ export class InkEditor {
                 }
             });
         });
+
+        // Insert image
+        const imageBtn = document.getElementById('insert-image-btn');
+        const imageInput = document.getElementById('ink-image-input');
+        imageBtn?.addEventListener('click', () => imageInput?.click());
+        imageInput?.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            if (file) this.insertImageFromFile(file);
+            imageInput.value = '';
+        });
     }
     
     setTool(tool) {
@@ -238,16 +254,29 @@ export class InkEditor {
     }
     
     loadContent(content) {
-        this.content = content || { version: 1, strokes: [] };
+        this.content = content || { version: 2, strokes: [], images: [] };
+        // Migrate version 1 to version 2
+        if (!this.content.version || this.content.version < 2) {
+            this.content.version = 2;
+        }
         // Ensure strokes is an array
         if (!Array.isArray(this.content.strokes)) {
             this.content.strokes = [];
         }
+        // Ensure images is an array
+        if (!Array.isArray(this.content.images)) {
+            this.content.images = [];
+        }
         this.undoStack = [];
         this.redoStack = [];
         this._strokeBounds.clear();
+        this._imageCache.clear();
         this.invalidateCache();
         this.clearSelection();
+
+        // Preload images
+        this._preloadImages();
+
         this.render();
     }
 
@@ -311,8 +340,65 @@ export class InkEditor {
             return;
         }
 
-        // Move tool: single pointer pan
+        // Move tool: single pointer pan, or image selection
         if (this.currentTool === 'move') {
+            const point = this.getPoint(e);
+            // Check if clicking on a selected image's resize/rotate handle
+            if (this.selectedImages.length > 0) {
+                for (const imgId of this.selectedImages) {
+                    const imageObj = this.content.images.find(i => i.id === imgId);
+                    if (!imageObj) continue;
+                    const handle = this._getImageResizeHandle(point, imageObj);
+                    if (handle === 'rotate') {
+                        this._imageRotating = {
+                            imageId: imgId,
+                            startAngle: Math.atan2(
+                                point.y - (imageObj.y + imageObj.height / 2),
+                                point.x - (imageObj.x + imageObj.width / 2)
+                            ) * 180 / Math.PI,
+                            startRotation: imageObj.rotation || 0
+                        };
+                        this.isDrawing = false;
+                        return;
+                    }
+                    if (handle) {
+                        this._imageResizing = {
+                            imageId: imgId,
+                            handle,
+                            startX: point.x,
+                            startY: point.y,
+                            startBounds: { x: imageObj.x, y: imageObj.y, width: imageObj.width, height: imageObj.height }
+                        };
+                        this.isDrawing = false;
+                        return;
+                    }
+                }
+            }
+
+            // Check if clicking on an image
+            const clickedImage = this.getImageAt(point);
+            if (clickedImage) {
+                this.clearSelection();
+                this.selectedImages = [clickedImage.id];
+                this.isMovingSelection = true;
+                this.moveStartPoint = point;
+                this.isDrawing = false;
+                this.render();
+                return;
+            }
+
+            // If clicking on a selected image, start move
+            if (this.selectedImages.length > 0) {
+                const selImg = this.content.images.find(i => this.selectedImages.includes(i.id) && this._pointInImage(point, i));
+                if (selImg) {
+                    this.isMovingSelection = true;
+                    this.moveStartPoint = point;
+                    this.isDrawing = false;
+                    return;
+                }
+                this.clearSelection();
+            }
+
             this.isPanning = true;
             this.panStart = { x: e.clientX, y: e.clientY };
             this.container?.classList.add('panning');
@@ -335,7 +421,7 @@ export class InkEditor {
         
         if (this.currentTool === 'select') {
             // Check if clicking within selection bounds - enable drag to move
-            if (this.selectedStrokes.length > 0 && !this.isLassoing) {
+            if ((this.selectedStrokes.length > 0 || this.selectedImages.length > 0) && !this.isLassoing) {
                 const bounds = this.getSelectionBounds();
                 if (bounds && this.pointInBounds(point, bounds)) {
                     this.isMovingSelection = true;
@@ -345,6 +431,45 @@ export class InkEditor {
                     this.isDrawing = false;
                     return;
                 }
+                // Check if clicking on a selected image's resize/rotate handle
+                for (const imgId of this.selectedImages) {
+                    const imageObj = this.content.images.find(i => i.id === imgId);
+                    if (!imageObj) continue;
+                    const handle = this._getImageResizeHandle(point, imageObj);
+                    if (handle === 'rotate') {
+                        this._imageRotating = {
+                            imageId: imgId,
+                            startAngle: Math.atan2(
+                                point.y - (imageObj.y + imageObj.height / 2),
+                                point.x - (imageObj.x + imageObj.width / 2)
+                            ) * 180 / Math.PI,
+                            startRotation: imageObj.rotation || 0
+                        };
+                        this.isDrawing = false;
+                        return;
+                    }
+                    if (handle) {
+                        this._imageResizing = {
+                            imageId: imgId,
+                            handle,
+                            startX: point.x,
+                            startY: point.y,
+                            startBounds: { x: imageObj.x, y: imageObj.y, width: imageObj.width, height: imageObj.height }
+                        };
+                        this.isDrawing = false;
+                        return;
+                    }
+                }
+            }
+            // Check if clicking on an image directly
+            const clickedImage = this.getImageAt(point);
+            if (clickedImage && !this.isLassoing) {
+                this.clearSelection();
+                this.selectedImages = [clickedImage.id];
+                this.render();
+                this.showSelectionMenu();
+                this.isDrawing = false;
+                return;
             }
             this.handleSelectionStart(point);
         } else if (['line', 'rectangle', 'circle', 'arrow'].includes(this.currentTool)) {
@@ -393,6 +518,56 @@ export class InkEditor {
     handlePointerMove(e) {
         e.preventDefault();
 
+        // Handle image resize
+        if (this._imageResizing) {
+            const point = this.getPoint(e);
+            const { imageId, handle, startX, startY, startBounds } = this._imageResizing;
+            const imageObj = this.content.images.find(i => i.id === imageId);
+            if (imageObj) {
+                const dx = point.x - startX;
+                const dy = point.y - startY;
+                const aspect = startBounds.width / startBounds.height;
+
+                if (handle === 'se') {
+                    imageObj.width = Math.max(20, startBounds.width + dx);
+                    imageObj.height = imageObj.width / aspect;
+                } else if (handle === 'sw') {
+                    imageObj.width = Math.max(20, startBounds.width - dx);
+                    imageObj.height = imageObj.width / aspect;
+                    imageObj.x = startBounds.x + startBounds.width - imageObj.width;
+                } else if (handle === 'ne') {
+                    imageObj.width = Math.max(20, startBounds.width + dx);
+                    imageObj.height = imageObj.width / aspect;
+                    imageObj.y = startBounds.y + startBounds.height - imageObj.height;
+                } else if (handle === 'nw') {
+                    imageObj.width = Math.max(20, startBounds.width - dx);
+                    imageObj.height = imageObj.width / aspect;
+                    imageObj.x = startBounds.x + startBounds.width - imageObj.width;
+                    imageObj.y = startBounds.y + startBounds.height - imageObj.height;
+                }
+
+                this.invalidateCache();
+                this.render();
+            }
+            return;
+        }
+
+        // Handle image rotation
+        if (this._imageRotating) {
+            const point = this.getPoint(e);
+            const { imageId, startAngle, startRotation } = this._imageRotating;
+            const imageObj = this.content.images.find(i => i.id === imageId);
+            if (imageObj) {
+                const cx = imageObj.x + imageObj.width / 2;
+                const cy = imageObj.y + imageObj.height / 2;
+                const currentAngle = Math.atan2(point.y - cy, point.x - cx) * 180 / Math.PI;
+                imageObj.rotation = startRotation + (currentAngle - startAngle);
+                this.invalidateCache();
+                this.render();
+            }
+            return;
+        }
+
         // Handle selection moving
         if (this.isMovingSelection && this.moveStartPoint) {
             const point = this.getPoint(e);
@@ -412,6 +587,14 @@ export class InkEditor {
                         stroke.start.x += dx; stroke.start.y += dy;
                         stroke.end.x += dx; stroke.end.y += dy;
                     }
+                });
+
+            // Also move selected images
+            this.content.images
+                .filter(i => this.selectedImages.includes(i.id))
+                .forEach(img => {
+                    img.x += dx;
+                    img.y += dy;
                 });
             
             this.moveStartPoint = point;
@@ -529,6 +712,24 @@ export class InkEditor {
             if (this.activePointers.size < 2) {
                 this.isPinching = false;
             }
+        }
+
+        // End image resize
+        if (this._imageResizing) {
+            this.saveUndoState();
+            this._imageResizing = null;
+            this.app?.markModified();
+            this.render();
+            return;
+        }
+
+        // End image rotation
+        if (this._imageRotating) {
+            this.saveUndoState();
+            this._imageRotating = null;
+            this.app?.markModified();
+            this.render();
+            return;
         }
 
         // End selection moving
@@ -906,19 +1107,27 @@ export class InkEditor {
         this.lassoPoints.push(point);
         
         if (this.lassoPoints.length < 3) {
-            // Click selection - select stroke at point
+            // Click selection - select stroke or image at point
             const stroke = this.getStrokeAt(point);
+            const image = this.getImageAt(point);
             if (stroke) {
                 this.selectedStrokes = [stroke.id];
                 this.showSelectionMenu();
+            } else if (image) {
+                this.selectedImages = [image.id];
+                this.showSelectionMenu();
             }
         } else {
-            // Lasso selection - find strokes inside polygon
+            // Lasso selection - find strokes and images inside polygon
             this.selectedStrokes = this.content.strokes
                 .filter(stroke => this.strokeInLasso(stroke))
                 .map(s => s.id);
+
+            this.selectedImages = (this.content.images || [])
+                .filter(img => this.imageInLasso(img))
+                .map(i => i.id);
             
-            if (this.selectedStrokes.length > 0) {
+            if (this.selectedStrokes.length > 0 || this.selectedImages.length > 0) {
                 this.showSelectionMenu();
             }
         }
@@ -986,7 +1195,7 @@ export class InkEditor {
     
     showSelectionMenu() {
         this.hideSelectionMenu();
-        if (this.selectedStrokes.length === 0) return;
+        if (this.selectedStrokes.length === 0 && this.selectedImages.length === 0) return;
         
         // Calculate selection bounds
         const bounds = this.getSelectionBounds();
@@ -995,11 +1204,17 @@ export class InkEditor {
         // Create menu element
         const menu = document.createElement('div');
         menu.className = 'ink-selection-menu';
-        menu.innerHTML = `
-            <button data-action="clone" title="克隆"><i class="fas fa-copy"></i></button>
-            <button data-action="delete" title="删除"><i class="fas fa-trash"></i></button>
-            <button data-action="export" title="导出PNG"><i class="fas fa-image"></i></button>
-        `;
+                const isImageOnly = this.selectedImages.length > 0 && this.selectedStrokes.length === 0;
+                menu.innerHTML = isImageOnly
+                        ? `
+                                <button data-action="clone" title="克隆"><i class="fas fa-copy"></i></button>
+                                <button data-action="delete" title="删除"><i class="fas fa-trash"></i></button>
+                            `
+                        : `
+                                <button data-action="clone" title="克隆"><i class="fas fa-copy"></i></button>
+                                <button data-action="delete" title="删除"><i class="fas fa-trash"></i></button>
+                                <button data-action="export" title="导出PNG"><i class="fas fa-image"></i></button>
+                            `;
         
         // // Hint text for drag-to-move
         // const hint = document.createElement('div');
@@ -1074,11 +1289,12 @@ export class InkEditor {
         }
     }
     
-    cloneSelected() {
-        if (this.selectedStrokes.length === 0) return;
+    async cloneSelected() {
+        if (this.selectedStrokes.length === 0 && this.selectedImages.length === 0) return;
         
         this.saveUndoState();
         const newStrokes = [];
+        const newImages = [];
         
         this.content.strokes
             .filter(s => this.selectedStrokes.includes(s.id))
@@ -1096,9 +1312,48 @@ export class InkEditor {
                 }
                 newStrokes.push(cloned);
             });
+
+        for (const imageObj of this.content.images.filter(i => this.selectedImages.includes(i.id))) {
+            const clonedImage = {
+                ...imageObj,
+                id: this.generateId(),
+                x: imageObj.x + 20,
+                y: imageObj.y + 20,
+                blobId: null,
+                timestamp: Date.now()
+            };
+
+            const cachedImage = this._imageCache.get(imageObj.id);
+            if (cachedImage) {
+                this._imageCache.set(clonedImage.id, cachedImage);
+            }
+
+            if (imageObj.blobId && this.app?.db) {
+                try {
+                    const blob = await this.app.db.getImageBlob(imageObj.blobId);
+                    if (blob?.data) {
+                        const clonedBlobId = this.generateId();
+                        await this.app.db.saveImageBlob({
+                            id: clonedBlobId,
+                            noteId: this.app.currentNote?.id || null,
+                            data: blob.data,
+                            createdAt: new Date().toISOString()
+                        });
+                        clonedImage.blobId = clonedBlobId;
+                    }
+                } catch (error) {
+                    console.warn('Failed to clone image blob:', error);
+                }
+            }
+
+            newImages.push(clonedImage);
+        }
         
         this.content.strokes.push(...newStrokes);
+        this.content.images.push(...newImages);
         this.selectedStrokes = newStrokes.map(s => s.id);
+        this.selectedImages = newImages.map(i => i.id);
+        this.invalidateCache();
         this.render();
         this.showSelectionMenu();
         this.app.markModified();
@@ -1177,6 +1432,9 @@ export class InkEditor {
     
     clearSelection() {
         this.selectedStrokes = [];
+        this.selectedImages = [];
+        this._imageResizing = null;
+        this._imageRotating = null;
         this.hideSelectionMenu();
         this.isMovingSelection = false;
         this.container.style.cursor = '';
@@ -1184,12 +1442,25 @@ export class InkEditor {
     }
     
     deleteSelected() {
-        if (this.selectedStrokes.length === 0) return;
+        if (this.selectedStrokes.length === 0 && this.selectedImages.length === 0) return;
         
         this.saveUndoState();
         this.content.strokes = this.content.strokes.filter(
             s => !this.selectedStrokes.includes(s.id)
         );
+        // Delete selected images and their blobs
+        const imagesToDelete = this.content.images.filter(
+            i => this.selectedImages.includes(i.id)
+        );
+        this.content.images = this.content.images.filter(
+            i => !this.selectedImages.includes(i.id)
+        );
+        for (const img of imagesToDelete) {
+            this._imageCache.delete(img.id);
+            if (img.blobId && this.app?.db) {
+                this.app.db.deleteImageBlob(img.blobId).catch(() => {});
+            }
+        }
         this._strokeBounds.clear();
         this.invalidateCache();
         this.clearSelection();
@@ -1512,6 +1783,9 @@ export class InkEditor {
             
             // Viewport culling — only draw strokes that intersect the visible area
             const viewport = this._getViewportInContentCoords();
+
+            // Keep images between page background and strokes.
+            this._renderImagesInContentSpace(this._cacheCtx, viewport);
             
             for (const stroke of this.content.strokes) {
                 if (this._isStrokeVisible(stroke, viewport)) {
@@ -1607,6 +1881,7 @@ export class InkEditor {
     renderUI() {
         this.clearUI();
         this.renderSelectionHighlights();
+        this._renderImageSelectionHandles(this.uiCtx);
     }
     
     clearUI() {
@@ -1642,7 +1917,7 @@ export class InkEditor {
     }
     
     getSelectionBounds() {
-        if (this.selectedStrokes.length === 0) return null;
+        if (this.selectedStrokes.length === 0 && this.selectedImages.length === 0) return null;
         
         let minX = Infinity, minY = Infinity;
         let maxX = -Infinity, maxY = -Infinity;
@@ -1664,6 +1939,18 @@ export class InkEditor {
                     maxY = Math.max(maxY, stroke.start.y, stroke.end.y);
                 }
             });
+
+        // Include selected images in bounds
+        (this.content.images || [])
+            .filter(i => this.selectedImages.includes(i.id))
+            .forEach(img => {
+                minX = Math.min(minX, img.x);
+                minY = Math.min(minY, img.y);
+                maxX = Math.max(maxX, img.x + img.width);
+                maxY = Math.max(maxY, img.y + img.height);
+            });
+
+        if (minX === Infinity) return null;
         
         return {
             x: minX,
@@ -1935,6 +2222,7 @@ export class InkEditor {
     clear() {
         this.saveUndoState();
         this.content.strokes = [];
+        this.content.images = [];
         this._strokeBounds.clear();
         this.invalidateCache();
         this.clearSelection();
@@ -1966,6 +2254,8 @@ export class InkEditor {
         );
         
         ctx.translate(padding - bounds.x, padding - bounds.y);
+
+        this._renderImagesInContentSpace(ctx);
         
         this.content.strokes.forEach(stroke => {
             this.renderStroke(ctx, stroke);
@@ -2004,5 +2294,297 @@ export class InkEditor {
             width: maxX - minX,
             height: maxY - minY
         };
+    }
+
+    // ======== Image Support ========
+
+    async insertImageFromFile(file) {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const dataUrl = e.target.result;
+            await this.addImage(dataUrl);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async addImage(dataUrl) {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = dataUrl;
+        });
+
+        // Calculate placement in the center of the viewport
+        const viewCenter = {
+            x: (-this.offset.x + this.mainCanvas.width / 2) / this.scale,
+            y: (-this.offset.y + this.mainCanvas.height / 2) / this.scale
+        };
+
+        // Scale down large images to reasonable size
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        const maxDim = 600;
+        if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+        }
+
+        const imageObj = {
+            id: this.generateId(),
+            type: 'image',
+            x: viewCenter.x - w / 2,
+            y: viewCenter.y - h / 2,
+            width: w,
+            height: h,
+            rotation: 0,
+            blobId: null,
+            timestamp: Date.now()
+        };
+
+        // Store image data as separate blob in DB
+        if (this.app?.db) {
+            const blobId = this.generateId();
+            await this.app.db.saveImageBlob({
+                id: blobId,
+                noteId: this.app.currentNote?.id || null,
+                data: dataUrl,
+                createdAt: new Date().toISOString()
+            });
+            imageObj.blobId = blobId;
+        }
+
+        // Cache the loaded image element
+        this._imageCache.set(imageObj.id, img);
+
+        this.saveUndoState();
+        this.content.images.push(imageObj);
+        this.invalidateCache();
+        this.render();
+        this.app?.markModified();
+        this.app?.logger?.info('an image was inserted into the ink note.');
+    }
+
+    async _preloadImages() {
+        if (!this.content.images?.length || !this.app?.db) return;
+
+        for (const imageObj of this.content.images) {
+            if (this._imageCache.has(imageObj.id)) continue;
+            if (!imageObj.blobId) continue;
+
+            try {
+                const blob = await this.app.db.getImageBlob(imageObj.blobId);
+                if (blob?.data) {
+                    const img = new Image();
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        img.src = blob.data;
+                    });
+                    this._imageCache.set(imageObj.id, img);
+                }
+            } catch (err) {
+                console.warn('Failed to preload image:', imageObj.id, err);
+            }
+        }
+
+        this.invalidateCache();
+        this.render();
+    }
+
+    _isImageVisible(imageObj, viewport) {
+        const x2 = imageObj.x + imageObj.width;
+        const y2 = imageObj.y + imageObj.height;
+
+        return !(x2 < viewport.x ||
+                 imageObj.x > viewport.x + viewport.w ||
+                 y2 < viewport.y ||
+                 imageObj.y > viewport.y + viewport.h);
+    }
+
+    _renderImagesInContentSpace(ctx, viewport = null) {
+        if (!this.content.images?.length) return;
+
+        for (const imageObj of this.content.images) {
+            if (viewport && !this._isImageVisible(imageObj, viewport)) {
+                continue;
+            }
+
+            const img = this._imageCache.get(imageObj.id);
+            if (!img) continue;
+
+            ctx.save();
+
+            const cx = imageObj.x + imageObj.width / 2;
+            const cy = imageObj.y + imageObj.height / 2;
+
+            ctx.translate(cx, cy);
+            ctx.rotate((imageObj.rotation || 0) * Math.PI / 180);
+
+            ctx.drawImage(
+                img,
+                -imageObj.width / 2,
+                -imageObj.height / 2,
+                imageObj.width,
+                imageObj.height
+            );
+
+            ctx.restore();
+        }
+    }
+
+    _renderImageSelectionHandles(ctx) {
+        if (!this.selectedImages.length) return;
+
+        for (const imgId of this.selectedImages) {
+            const imageObj = this.content.images.find(i => i.id === imgId);
+            if (!imageObj) continue;
+
+            ctx.save();
+
+            const cx = imageObj.x + imageObj.width / 2;
+            const cy = imageObj.y + imageObj.height / 2;
+            const sx = cx * this.scale + this.offset.x;
+            const sy = cy * this.scale + this.offset.y;
+            const sw = imageObj.width * this.scale;
+            const sh = imageObj.height * this.scale;
+            const rot = (imageObj.rotation || 0) * Math.PI / 180;
+
+            ctx.translate(sx, sy);
+            ctx.rotate(rot);
+
+            // Selection border
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 3]);
+            ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+            ctx.setLineDash([]);
+
+            // Corner handles for resizing
+            const handleSize = 8;
+            const corners = [
+                { x: -sw / 2, y: -sh / 2, cursor: 'nw' },
+                { x: sw / 2, y: -sh / 2, cursor: 'ne' },
+                { x: sw / 2, y: sh / 2, cursor: 'se' },
+                { x: -sw / 2, y: sh / 2, cursor: 'sw' }
+            ];
+
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 2;
+
+            for (const corner of corners) {
+                ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+                ctx.strokeRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+            }
+
+            // Rotation handle (top center)
+            const rotHandleY = -sh / 2 - 25;
+            ctx.beginPath();
+            ctx.moveTo(0, -sh / 2);
+            ctx.lineTo(0, rotHandleY);
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(0, rotHandleY, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#2196F3';
+            ctx.fill();
+
+            ctx.restore();
+        }
+    }
+
+    getImageAt(point) {
+        if (!this.content.images?.length) return null;
+
+        // Search in reverse order (top-most first)
+        for (let i = this.content.images.length - 1; i >= 0; i--) {
+            const imageObj = this.content.images[i];
+            if (this._pointInImage(point, imageObj)) {
+                return imageObj;
+            }
+        }
+        return null;
+    }
+
+    _pointInImage(point, imageObj) {
+        // Transform point to image-local coordinates (accounting for rotation)
+        const cx = imageObj.x + imageObj.width / 2;
+        const cy = imageObj.y + imageObj.height / 2;
+        const rot = -(imageObj.rotation || 0) * Math.PI / 180;
+
+        const dx = point.x - cx;
+        const dy = point.y - cy;
+        const localX = dx * Math.cos(rot) - dy * Math.sin(rot);
+        const localY = dx * Math.sin(rot) + dy * Math.cos(rot);
+
+        return Math.abs(localX) <= imageObj.width / 2 &&
+               Math.abs(localY) <= imageObj.height / 2;
+    }
+
+    _getImageResizeHandle(point, imageObj) {
+        const cx = imageObj.x + imageObj.width / 2;
+        const cy = imageObj.y + imageObj.height / 2;
+        const rot = -(imageObj.rotation || 0) * Math.PI / 180;
+        const dx = point.x - cx;
+        const dy = point.y - cy;
+        const localX = dx * Math.cos(rot) - dy * Math.sin(rot);
+        const localY = dx * Math.sin(rot) + dy * Math.cos(rot);
+
+        const hw = imageObj.width / 2;
+        const hh = imageObj.height / 2;
+        const threshold = 15 / this.scale;
+
+        // Check corners
+        const corners = [
+            { x: -hw, y: -hh, handle: 'nw' },
+            { x: hw, y: -hh, handle: 'ne' },
+            { x: hw, y: hh, handle: 'se' },
+            { x: -hw, y: hh, handle: 'sw' }
+        ];
+
+        for (const corner of corners) {
+            if (Math.abs(localX - corner.x) < threshold && Math.abs(localY - corner.y) < threshold) {
+                return corner.handle;
+            }
+        }
+
+        // Check rotation handle (top center)
+        const rotHandleDist = hh + 25 / this.scale;
+        if (Math.abs(localX) < threshold && Math.abs(localY + rotHandleDist) < threshold) {
+            return 'rotate';
+        }
+
+        return null;
+    }
+
+    imageInLasso(imageObj) {
+        if (!this.lassoPoints.length) return false;
+        // Check if image center is inside lasso polygon
+        const center = {
+            x: imageObj.x + imageObj.width / 2,
+            y: imageObj.y + imageObj.height / 2
+        };
+        return this.pointInPolygon(center, this.lassoPoints);
+    }
+
+    deleteSelectedImages() {
+        if (!this.selectedImages.length) return;
+        this.content.images = this.content.images.filter(
+            i => !this.selectedImages.includes(i.id)
+        );
+        // Clean up image blobs from DB
+        for (const imgId of this.selectedImages) {
+            const img = this.content.images.find(i => i.id === imgId);
+            if (img?.blobId && this.app?.db) {
+                this.app.db.deleteImageBlob(img.blobId).catch(() => {});
+            }
+        }
+        this.selectedImages = [];
+        this.invalidateCache();
+        this.render();
     }
 }

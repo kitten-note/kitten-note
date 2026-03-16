@@ -82,15 +82,34 @@ export class ExportManager {
 
         const notebook = await this.db.getNotebook(note.notebookId);
         const pageStyle = notebook?.pageStyle || { pattern: 'blank', color: '#ffffff' };
+
+        // Deep clone content to inline images
+        const contentClone = JSON.parse(JSON.stringify(note.content));
+
+        // Inline image blobs as Base64
+        if (contentClone.images?.length) {
+            for (const img of contentClone.images) {
+                if (img.blobId) {
+                    try {
+                        const blob = await this.db.getImageBlob(img.blobId);
+                        if (blob?.data) {
+                            img.inlineData = blob.data;
+                        }
+                    } catch (err) {
+                        console.warn('Failed to inline image:', img.id, err);
+                    }
+                }
+            }
+        }
         
         const ktntData = {
-            version: 1,
+            version: 2,
             format: 'ktnt',
             title: note.title,
             createdAt: note.createdAt,
             updatedAt: note.updatedAt,
             pageStyle,
-            content: note.content
+            content: contentClone
         };
         
         const content = JSON.stringify(ktntData, null, 2);

@@ -220,6 +220,9 @@
                         <button id="arrow-tool" class="btn-tool" data-tool="arrow" title="箭头 (A)">
                             <i class="fas fa-play"></i>
                         </button>
+                        <button id="insert-image-btn" class="btn-tool" title="插入图片">
+                            <i class="fas fa-image"></i>
+                        </button>
                     </div>
                     <div class="toolbar-group colors">
                         <input type="color" id="stroke-color" value="#000000" title="笔画颜色">
@@ -235,6 +238,7 @@
                         </div>
                     </div>
                     <div class="toolbar-group">
+                        <input type="file" id="ink-image-input" accept="image/*" hidden>
                         <button id="reset-view" class="btn-tool" title="复位视图">
                             <i class="fas fa-home"></i>
                         </button>
@@ -291,6 +295,7 @@
                     <button class="settings-tab" data-tab="drawing">绘制</button>
                     <button class="settings-tab" data-tab="sync">同步</button>
                     <button class="settings-tab" data-tab="backup">备份与恢复</button>
+                    <button class="settings-tab" data-tab="storage">存储</button>
                     <button class="settings-tab" data-tab="nes">AI 助手</button>
                     <button class="settings-tab" data-tab="shortcuts">快捷键</button>
                     <button class="settings-tab" data-tab="developer">开发</button>
@@ -301,6 +306,13 @@
                 
                 <!-- Appearance Settings -->
                 <div class="settings-panel active" id="appearance-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-palette"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>外观</h4>
+                            <p>自定义主题模式、强调色和预设主题，让 KittenNote 符合你的审美。</p>
+                        </div>
+                    </div>
                     <div class="setting-item">
                         <label>主题模式</label>
                         <div class="theme-switcher">
@@ -412,9 +424,61 @@
                 
                 <!-- Sync Settings -->
                 <div class="settings-panel hidden" id="sync-panel">
-                    <div class="setting-item">
-                        <label>同步</label>
-                        <span class="setting-hint">同步请使用主界面左下角的同步按钮进行操作。</span>
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-sync-alt"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>同步</h4>
+                            <p>通过 WebRTC P2P 或 WebDAV 在多台设备之间同步笔记数据。</p>
+                        </div>
+                    </div>
+
+                    <div class="backup-grid">
+                        <div class="backup-card">
+                            <h5>WebRTC P2P 同步</h5>
+                            <p>通过扫描二维码在局域网内直接同步，无需服务器。</p>
+                            <button id="sync-open-wizard-btn" class="btn btn-primary" style="margin-top: 8px;">
+                                <i class="fas fa-qrcode"></i> 打开同步向导
+                            </button>
+                        </div>
+                        <div class="backup-card">
+                            <h5>WebDAV 自动同步</h5>
+                            <p>配置 WebDAV 服务器自动同步笔记数据。</p>
+                            <div class="setting-item" style="margin-top: 8px;">
+                                <label>服务器地址</label>
+                                <input type="text" id="webdav-url" class="setting-input" placeholder="https://example.com/dav">
+                            </div>
+                            <div class="setting-item">
+                                <label>用户名</label>
+                                <input type="text" id="webdav-username" class="setting-input" placeholder="用户名">
+                            </div>
+                            <div class="setting-item">
+                                <label>密码</label>
+                                <input type="password" id="webdav-password" class="setting-input" placeholder="密码">
+                            </div>
+                            <div class="setting-item">
+                                <label>文件路径</label>
+                                <input type="text" id="webdav-path" class="setting-input" value="/kitten-note" placeholder="/kitten-note" readonly>
+                                <span class="setting-hint">数据将存放在 kitten-note 子目录下。</span>
+                            </div>
+                            <div class="setting-item">
+                                <label>同步间隔（分钟）</label>
+                                <input type="number" id="webdav-interval" class="setting-input" min="1" max="1440" value="30">
+                            </div>
+                            <div class="setting-item">
+                                <label>自动同步</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="webdav-auto-sync">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <button id="webdav-save-btn" class="btn btn-primary" style="margin-top: 8px;">
+                                <i class="fas fa-save"></i> 保存 WebDAV 配置
+                            </button>
+                            <button id="webdav-test-btn" class="btn btn-secondary" style="margin-top: 4px;">
+                                <i class="fas fa-plug"></i> 测试连接
+                            </button>
+                            <div id="webdav-last-sync" class="backup-meta" style="margin-top: 8px;">上次自动同步：<span id="webdav-last-sync-time">未同步</span></div>
+                        </div>
                     </div>
                 </div>
 
@@ -459,9 +523,105 @@
                         <span>清理浏览器之前请务必先备份，清理完成后再恢复。</span>
                     </div>
                 </div>
+
+                <!-- Storage Settings -->
+                <div class="settings-panel hidden" id="storage-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-database"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>存储引擎</h4>
+                            <p>选择笔记内容的存储方式。OPFS（Origin Private File System）使用基于块的增量写入，减少 SSD 磨损。</p>
+                            <p class="setting-hint">注意：OPFS 仅存储笔记内容，应用程序核心数据（文件夹、笔记本、设置、同步信息）仍存储于 IndexedDB，请勿清除 IndexedDB。</p>
+                        </div>
+                    </div>
+
+                    <div class="backup-grid">
+                        <div class="backup-card">
+                            <h5>当前存储引擎</h5>
+                            <p>当前使用：<strong id="storage-current-engine">IndexedDB</strong></p>
+                            <div class="setting-item" style="margin-top: 12px;">
+                                <label>切换存储引擎</label>
+                                <select id="storage-engine-select" class="form-select">
+                                    <option value="indexeddb">IndexedDB</option>
+                                    <option value="opfs">OPFS（块存储）</option>
+                                </select>
+                            </div>
+                            <button id="storage-migrate-btn" class="btn btn-primary" style="margin-top: 12px;" disabled>
+                                <i class="fas fa-exchange-alt"></i> 执行迁移
+                            </button>
+                            <div id="storage-opfs-unsupported" class="backup-warning hidden" style="margin-top: 8px;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>当前浏览器不支持 OPFS。</span>
+                            </div>
+                        </div>
+
+                        <div class="backup-card">
+                            <h5>迁移状态</h5>
+                            <div id="storage-migration-status">
+                                <p id="storage-migration-text" class="setting-hint">无迁移任务</p>
+                                <div id="storage-migration-progress-container" class="hidden" style="margin-top: 8px;">
+                                    <div style="background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; height: 8px;">
+                                        <div id="storage-migration-progress-bar" style="background: var(--primary); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                                    </div>
+                                    <p id="storage-migration-progress-text" class="setting-hint" style="margin-top: 4px;">0%</p>
+                                </div>
+                            </div>
+                            <div class="backup-warning hidden" id="storage-migration-warning" style="margin-top: 8px;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>迁移进行中，请勿关闭应用程序！</span>
+                            </div>
+                        </div>
+
+                        <div class="backup-card">
+                            <h5>数据恢复向导</h5>
+                            <p>当 IndexedDB 被误删时，可尝试从 OPFS 中的零散笔记块文件重建笔记。</p>
+                            <button id="storage-recover-btn" class="btn btn-secondary" style="margin-top: 8px;">
+                                <i class="fas fa-life-ring"></i> 启动数据恢复
+                            </button>
+                            <p id="storage-recover-result" class="setting-hint" style="margin-top: 8px;">尚未执行恢复</p>
+                        </div>
+                    </div>
+
+                    <div id="storage-opfs-health" class="hidden" style="margin-top: 20px;">
+                        <h5 style="margin-bottom: 12px;"><i class="fas fa-heartbeat"></i> OPFS 健康状态</h5>
+                        <div class="backup-grid">
+                            <div class="backup-card">
+                                <h5>概览</h5>
+                                <div class="setting-hint">
+                                    <p>笔记文件数：<span id="opfs-note-count">-</span></p>
+                                    <p>总大小：<span id="opfs-total-size">-</span></p>
+                                    <p>总块数：<span id="opfs-total-blocks">-</span></p>
+                                    <p>块大小：<span id="opfs-block-size">-</span></p>
+                                    <p>碎片文件：<span id="opfs-fragmented">-</span></p>
+                                </div>
+                                <button id="opfs-verify-btn" class="btn btn-secondary" style="margin-top: 8px;">
+                                    <i class="fas fa-stethoscope"></i> 验证完整性
+                                </button>
+                                <p id="opfs-verify-result" class="setting-hint" style="margin-top: 4px;"></p>
+                                <button id="opfs-defrag-btn" class="btn btn-secondary" style="margin-top: 8px;">
+                                    <i class="fas fa-broom"></i> 碎片整理
+                                </button>
+                                <p id="opfs-defrag-result" class="setting-hint" style="margin-top: 4px;"></p>
+                            </div>
+                            <div class="backup-card">
+                                <h5>笔记文件详情</h5>
+                                <div id="opfs-notes-list" class="setting-hint" style="max-height: 200px; overflow-y: auto;">
+                                    <p>--</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Drawing Settings -->
                 <div class="settings-panel hidden" id="drawing-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-pen-nib"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>绘制</h4>
+                            <p>调整压感、平滑和矫直等墨迹绘制参数，优化你的书写体验。</p>
+                        </div>
+                    </div>
                     <div class="drawing-grid">
                         <div class="drawing-card">
                             <div class="drawing-card-header">
@@ -537,6 +697,13 @@
                 
                 <!-- NES Settings -->
                 <div class="settings-panel hidden" id="nes-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-robot"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>AI 助手</h4>
+                            <p>配置 AI 智能建议功能，支持本地模型和 API 模式。</p>
+                        </div>
+                    </div>
                     <div class="setting-item">
                         <label>推理模式</label>
                         <select id="nes-mode" class="setting-select">
@@ -632,6 +799,13 @@
                 
                 <!-- Shortcuts Settings -->
                 <div class="settings-panel hidden" id="shortcuts-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-keyboard"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>快捷键</h4>
+                            <p>查看 KittenNote 支持的键盘快捷键。</p>
+                        </div>
+                    </div>
                     <div class="shortcuts-list">
                         <div class="shortcut-item">
                             <span class="shortcut-action">保存</span>
@@ -698,6 +872,13 @@
                 
                 <!-- Developer Settings -->
                 <div class="settings-panel hidden" id="developer-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-code"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>开发</h4>
+                            <p>Service Worker 管理、数据清除等高级操作。请谨慎使用。</p>
+                        </div>
+                    </div>
                     <div class="settings-group">
                         <h3><i class="fas fa-code"></i> 开发者工具</h3>
                         <div class="setting-item">
@@ -743,7 +924,7 @@
                             <img src="icons/icon-256.png" alt="KittenNote" class="about-logo-icon">
                         </div>
                         <h3>KittenNote</h3>
-                        <p class="version">版本1 第2次更新</p>
+                        <p class="version">版本2 第1次更新</p>
                         <p class="description">一款支持文字和墨迹编辑的跨平台PWA笔记软件</p>
                         <div class="about-features">
                             <p><i class="fas fa-check"></i> 离线优先，本地存储</p>
@@ -850,8 +1031,8 @@
             </div>
             <div class="modal-body">
                 <div class="import-section">
-                    <p class="import-hint">选择 .md 或 .ktnt 文件导入到指定笔记本</p>
-                    <input type="file" id="import-file-input" accept=".md,.ktnt,.zip" multiple style="display: none;">
+                    <p class="import-hint">选择 .md、.ktnt、.json 文件导入到指定笔记本</p>
+                    <input type="file" id="import-file-input" accept=".md,.ktnt,.json,.zip" multiple style="display: none;">
                     <button id="import-select-files" class="btn btn-secondary">
                         <i class="fas fa-file"></i> 选择文件
                     </button>
@@ -996,6 +1177,12 @@
                     <h3>连接成功！</h3>
                     <p id="sync-peer-info">已与对方设备建立连接</p>
                     <button id="sync-start-sync" class="btn btn-primary">开始同步</button>
+                    <div id="sync-progress-area" class="hidden" style="margin-top: 16px; width: 100%;">
+                        <div style="background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; height: 8px;">
+                            <div id="sync-progress-bar" style="background: var(--primary); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                        </div>
+                        <p id="sync-progress-text" class="setting-hint" style="margin-top: 6px; text-align: center;">准备中...</p>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer sync-footer">

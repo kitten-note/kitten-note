@@ -1623,7 +1623,14 @@ html, body {
     margin-bottom: 24px;
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 16px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.settings-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .settings-tab {
@@ -1635,6 +1642,8 @@ html, body {
     font-size: 13px;
     cursor: pointer;
     transition: all var(--transition-fast);
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .settings-tab:hover {
@@ -2574,19 +2583,10 @@ html, body {
     }
     
     .settings-tabs {
-        overflow-x: auto;
-        flex-wrap: nowrap;
         padding-bottom: 12px;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-    }
-    
-    .settings-tabs::-webkit-scrollbar {
-        display: none;
     }
     
     .settings-tabs .settings-tab {
-        flex-shrink: 0;
         padding: 6px 12px;
         font-size: 12px;
     }
