@@ -291,7 +291,12 @@ export class InkEditor {
     
     handlePointerDown(e) {
         e.preventDefault();
-        this.mainCanvas.setPointerCapture(e.pointerId);
+        try {
+            this.mainCanvas.setPointerCapture(e.pointerId);
+        } catch (err) {
+            // iPad Safari may throw when capture is unavailable for this pointer.
+            console.warn('[Ink] setPointerCapture skipped:', err?.message || err);
+        }
 
         const isTouch = e.pointerType === 'touch';
         const isPen = e.pointerType === 'pen';
@@ -313,16 +318,15 @@ export class InkEditor {
             return;
         }
 
-        // Palm rejection: ignore palm-like touch when stylus was recently active
+        const stylusRecentlyActive = Date.now() - this.recentStylusTime < this.stylusActiveTimeout;
+
+        // Palm rejection: only apply strict rejection while stylus is actively used
         if (isTouch && this.palmRejectionEnabled) {
-            if (isPen || (Date.now() - this.recentStylusTime < this.stylusActiveTimeout)) {
+            if (stylusRecentlyActive) {
                 // During active pen usage, touch can still pinch-zoom but not draw
                 if (this.activePointers.size >= 2) {
                     this._startPinch();
                 }
-                return;
-            }
-            if (this.isPalmTouch(e)) {
                 return;
             }
         }
@@ -482,6 +486,9 @@ export class InkEditor {
     _startPinch() {
         if (this.activePointers.size === 2) {
             this.isPinching = true;
+            this.isPanning = false;
+            this.panStart = null;
+            this.container?.classList.remove('panning');
             const points = Array.from(this.activePointers.values());
             this.pinchStartDistance = this.getDistance(points[0], points[1]);
             this.pinchStartScale = this.scale;
@@ -617,6 +624,9 @@ export class InkEditor {
 
         // Panning (move tool or right-click)
         if (this.isPanning && !this.isPinching) {
+            if (e.pointerType === 'touch' && this.activePointers.has(e.pointerId)) {
+                this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            }
             const dx = e.clientX - this.panStart.x;
             const dy = e.clientY - this.panStart.y;
             this.offset.x += dx;

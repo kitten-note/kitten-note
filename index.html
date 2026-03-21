@@ -38,6 +38,7 @@
     <title>KittenNote</title>
 </head>
 <body>
+    <div id="boot-loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#f5f7fa;color:#666;font-size:15px;z-index:99999;">正在加载 KittenNote</div>
     <div id="app" class="app-container">
         <!-- Sidebar -->
         <aside id="sidebar" class="sidebar">
@@ -299,6 +300,7 @@
                     <button class="settings-tab" data-tab="nes">AI 助手</button>
                     <button class="settings-tab" data-tab="shortcuts">快捷键</button>
                     <button class="settings-tab" data-tab="developer">开发</button>
+                    <button class="settings-tab" data-tab="benchmark">基准评测</button>
                     <button class="settings-tab" data-tab="about">关于</button>
                 </div>
 
@@ -509,6 +511,12 @@
                                 <i class="fas fa-file-import"></i>
                                 导入备份文件
                             </button>
+                            <div id="backup-import-progress-container" class="hidden" style="margin-top: 10px;">
+                                <div style="background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; height: 8px;">
+                                    <div id="backup-import-progress-bar" style="background: var(--primary); height: 100%; width: 0%; transition: width 0.2s;"></div>
+                                </div>
+                                <p id="backup-import-progress-text" class="setting-hint" style="margin-top: 4px;">准备导入...</p>
+                            </div>
                         </div>
                     </div>
                     <div class="setting-item">
@@ -917,6 +925,66 @@
                     </div>
                 </div>
 
+                <!-- Benchmark Settings -->
+                <div class="settings-panel hidden" id="benchmark-panel">
+                    <div class="backup-hero">
+                        <div class="backup-hero-icon"><i class="fas fa-tachometer-alt"></i></div>
+                        <div class="backup-hero-text">
+                            <h4>基准评测</h4>
+                            <p>测试当前设备运行 KittenNote 的综合性能表现。</p>
+                        </div>
+                    </div>
+
+                    <div class="settings-group">
+                        <h3><i class="fas fa-gauge-high"></i> 设备跑分</h3>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <label>综合基准评测</label>
+                                <span class="setting-description">包含笔记渲染、数据读写、元素渲染三项，分数越高性能越好。</span>
+                            </div>
+                            <button id="benchmark-run-btn" class="btn-primary" style="white-space:nowrap">
+                                <i class="fas fa-play"></i> 开始评测
+                            </button>
+                        </div>
+
+                        <div class="setting-item" style="display:block;">
+                            <div class="setting-info">
+                                <label>评测进度</label>
+                                <span class="setting-description" id="benchmark-status-text">等待开始</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="benchmark-progress-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="backup-grid">
+                        <div class="backup-card">
+                            <h5>笔记渲染</h5>
+                            <p class="backup-meta"><span id="benchmark-note-render-score">0</span> 分</p>
+                        </div>
+                        <div class="backup-card">
+                            <h5>数据读写</h5>
+                            <p class="backup-meta"><span id="benchmark-data-io-score">0</span> 分</p>
+                        </div>
+                        <div class="backup-card">
+                            <h5>元素渲染</h5>
+                            <p class="backup-meta"><span id="benchmark-element-render-score">0</span> 分</p>
+                        </div>
+                        <div class="backup-card">
+                            <h5>总分</h5>
+                            <p class="backup-meta"><strong id="benchmark-total-score">0</strong> 分</p>
+                        </div>
+                    </div>
+
+                    <div class="backup-warning">
+                        <i class="fas fa-info-circle"></i>
+                        <span id="benchmark-detail-text">算法为线性换算，总分为三维度分数之和，可用于同版本设备横向对比。</span>
+                    </div>
+
+                    <div id="benchmark-sandbox" class="hidden" aria-hidden="true"></div>
+                </div>
+
                 <!-- About Settings -->
                 <div class="settings-panel hidden" id="about-panel">
                     <div class="about-content">
@@ -924,7 +992,7 @@
                             <img src="icons/icon-256.png" alt="KittenNote" class="about-logo-icon">
                         </div>
                         <h3>KittenNote</h3>
-                        <p class="version">版本2 第1次更新</p>
+                        <p class="version">版本2 第2次更新</p>
                         <p class="description">一款支持文字和墨迹编辑的跨平台PWA笔记软件</p>
                         <div class="about-features">
                             <p><i class="fas fa-check"></i> 离线优先，本地存储</p>

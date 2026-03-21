@@ -24,6 +24,8 @@
 import { Toast } from './toast.js';
 import { OPFSBlockStorage } from './opfs-storage.js';
 
+const PARSE_YIELD_INTERVAL = 20;
+
 export class SettingsManager {
     constructor(app) {
         this.app = app;
@@ -167,6 +169,7 @@ export class SettingsManager {
         
         // Developer settings
         this.setupDeveloperSettings();
+        this.setupBenchmarkSettings();
         
         // Listen for system theme changes
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
@@ -1071,9 +1074,29 @@ export class SettingsManager {
         if (!confirm('导入备份会覆盖当前所有数据，确定继续吗？')) return;
         if (!confirm('再次确认：请确保你已备份当前数据。')) return;
 
+        const importBtn = document.getElementById('backup-import-btn');
+        const progressContainer = document.getElementById('backup-import-progress-container');
+        const progressBar = document.getElementById('backup-import-progress-bar');
+        const progressText = document.getElementById('backup-import-progress-text');
+        const setProgress = (current, total, text) => {
+            const safeTotal = Math.max(total || 1, 1);
+            const safeCurrent = Math.max(0, Math.min(current || 0, safeTotal));
+            const pct = Math.round((safeCurrent / safeTotal) * 100);
+            if (progressBar) progressBar.style.width = `${pct}%`;
+            if (progressText) progressText.textContent = text || `${pct}% (${safeCurrent}/${safeTotal})`;
+        };
+
         try {
+            if (importBtn) importBtn.disabled = true;
+            progressContainer?.classList.remove('hidden');
+            setProgress(0, 100, '正在读取备份文件...');
             const buffer = await file.arrayBuffer();
-            const entries = this.parseZip(buffer);
+            setProgress(5, 100, '正在解析压缩包...');
+            const entries = await this.parseZip(buffer, (processed, total) => {
+                const ratio = total > 0 ? (processed / total) : 1;
+                const pct = Math.round(5 + ratio * 25);
+                setProgress(pct, 100, `正在解析压缩包... ${pct}%`);
+            });
             const backupData = entries['kittennote-backup.json'] || entries['backup.json'];
             if (!backupData) {
                 throw new Error('未找到备份文件内容');
@@ -1081,6 +1104,7 @@ export class SettingsManager {
 
             const json = new TextDecoder().decode(backupData);
             const data = JSON.parse(json);
+            setProgress(12, 100, '正在分析备份内容...');
 
             // Check for OPFS mirror files in the backup ZIP
             const opfsMirrorFiles = {};
@@ -1095,7 +1119,15 @@ export class SettingsManager {
                 data.opfsMirror = opfsMirrorFiles;
             }
 
-            await this.app.db.importAllData(data);
+            await this.app.db.importAllData(data, (current, total, message) => {
+                const pctBase = 12;
+                const pctSpan = 80;
+                const safeTotal = Math.max(total || 1, 1);
+                const ratio = Math.max(0, Math.min(current || 0, safeTotal)) / safeTotal;
+                const pct = Math.round(pctBase + ratio * pctSpan);
+                setProgress(pct, 100, message || `正在导入数据... ${pct}%`);
+            });
+            setProgress(94, 100, '正在应用导入设置...');
 
             const importedSettings = await this.app.db.getSetting('appSettings');
             if (importedSettings) {
@@ -1109,6 +1141,15 @@ export class SettingsManager {
             this.applySettings();
             this.updateBackupLastLabel();
 
+            if (this.app.db.storageEngine === 'opfs' && this.app.db.opfs) {
+                try {
+                    await this.refreshOPFSHealth();
+                } catch (e) {
+                    console.warn('Failed to refresh OPFS health after import:', e);
+                }
+            }
+            setProgress(100, 100, '导入完成，正在刷新页面...');
+
             Toast.show('已恢复备份，页面即将刷新', 'success');
             this.app.logger?.info('a backup was restored successfully. reloading soon.');
             setTimeout(() => location.reload(), 1200);
@@ -1116,6 +1157,8 @@ export class SettingsManager {
             console.error('Backup import failed:', error);
             Toast.show('恢复失败: ' + error.message, 'error');
             this.app.logger?.error('backup import failed.', error);
+        } finally {
+            if (importBtn) importBtn.disabled = false;
         }
     }
 
@@ -1190,11 +1233,13 @@ export class SettingsManager {
         return this.concatUint8Arrays(allParts);
     }
 
-    parseZip(buffer) {
+    async parseZip(buffer, onProgress) {
         const view = new DataView(buffer);
         const decoder = new TextDecoder();
         const files = {};
         let offset = 0;
+        let entryCount = 0;
+        const totalBytes = buffer.byteLength || 1;
 
         while (offset + 4 <= buffer.byteLength) {
             const signature = view.getUint32(offset, true);
@@ -1220,8 +1265,14 @@ export class SettingsManager {
 
             files[name] = data;
             offset = dataStart + compressedSize;
+            entryCount++;
+            onProgress?.(Math.min(offset, totalBytes), totalBytes);
+            if (entryCount % PARSE_YIELD_INTERVAL === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
         }
 
+        onProgress?.(totalBytes, totalBytes);
         return files;
     }
 
@@ -1310,6 +1361,177 @@ export class SettingsManager {
                 }
             }
         });
+    }
+
+    setupBenchmarkSettings() {
+        const runBtn = document.getElementById('benchmark-run-btn');
+        const progressBar = document.getElementById('benchmark-progress-bar');
+        const statusText = document.getElementById('benchmark-status-text');
+        const detailText = document.getElementById('benchmark-detail-text');
+        const noteScoreEl = document.getElementById('benchmark-note-render-score');
+        const ioScoreEl = document.getElementById('benchmark-data-io-score');
+        const elementScoreEl = document.getElementById('benchmark-element-render-score');
+        const totalScoreEl = document.getElementById('benchmark-total-score');
+        const sandbox = document.getElementById('benchmark-sandbox');
+
+        const setProgress = (pct, text) => {
+            const safe = Math.max(0, Math.min(100, Math.round(pct)));
+            if (progressBar) progressBar.style.width = `${safe}%`;
+            if (statusText && text) statusText.textContent = text;
+        };
+
+        const setScores = ({ note = 0, io = 0, element = 0, total = 0 }) => {
+            if (noteScoreEl) noteScoreEl.textContent = this._formatBenchmarkScore(note);
+            if (ioScoreEl) ioScoreEl.textContent = this._formatBenchmarkScore(io);
+            if (elementScoreEl) elementScoreEl.textContent = this._formatBenchmarkScore(element);
+            if (totalScoreEl) totalScoreEl.textContent = this._formatBenchmarkScore(total);
+        };
+
+        setScores({ note: 0, io: 0, element: 0, total: 0 });
+
+        runBtn?.addEventListener('click', async () => {
+            if (runBtn.disabled) return;
+            runBtn.disabled = true;
+            setProgress(0, '准备基准数据...');
+            if (detailText) detailText.textContent = '正在执行基准评测，请保持当前页面前台运行。';
+
+            try {
+                const results = await this.runBenchmark((pct, message) => setProgress(pct, message), sandbox);
+                setScores(results);
+                if (detailText) {
+                    detailText.textContent = `耗时：笔记渲染 ${results.noteMs.toFixed(1)}ms，数据读写 ${results.ioMs.toFixed(1)}ms，元素渲染 ${results.elementMs.toFixed(1)}ms。`;
+                }
+                setProgress(100, '评测完成');
+                this.app.Toast?.show('基准评测完成', 'success');
+                this.app.logger?.info(`benchmark finished with total score ${results.total}.`);
+            } catch (error) {
+                console.error('[Benchmark] failed:', error);
+                setProgress(0, '评测失败');
+                if (detailText) detailText.textContent = `评测失败：${error.message}`;
+                this.app.Toast?.show('评测失败: ' + error.message, 'error');
+            } finally {
+                runBtn.disabled = false;
+            }
+        });
+    }
+
+    _formatBenchmarkScore(value) {
+        return Math.round(value).toLocaleString('en-US');
+    }
+
+    /**
+     * Convert elapsed milliseconds to a linear score.
+     * score = (baselineMs / elapsedMs) * weight
+     * baselineMs keeps runs comparable, while weight controls per-dimension contribution.
+     */
+    _benchmarkScoreFromMs(ms, weight) {
+        const baselineMs = 240;
+        const safeMs = Math.max(ms, 1);
+        return Math.round((baselineMs / safeMs) * weight);
+    }
+
+    _generateBenchmarkDataset() {
+        const textBase = 'KittenNote benchmark payload for deterministic render and storage measurement. ';
+        const notes = [];
+        for (let i = 0; i < 90; i++) {
+            const repeated = textBase.repeat(8 + (i % 7));
+            notes.push({
+                id: `bench-note-${i}`,
+                title: `基准笔记 ${i + 1}`,
+                type: 'text',
+                content: `${repeated}\n# ${i}\n${'line '.repeat(40 + (i % 30))}`
+            });
+        }
+        return {
+            notes,
+            elementBlocks: 650,
+            ioItems: 220
+        };
+    }
+
+    async runBenchmark(onProgress, sandboxEl) {
+        const dataset = this._generateBenchmarkDataset();
+        const yieldFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
+        onProgress?.(5, '正在评测：笔记渲染...');
+        const noteStart = performance.now();
+        let noteChecksum = 0;
+        for (const note of dataset.notes) {
+            noteChecksum += note.title.length + String(note.content).length;
+            // Simulate text layout & render cost
+            String(note.content).split('\n').forEach(line => {
+                noteChecksum += line.length * 7;
+            });
+        }
+        await yieldFrame();
+        const noteMs = performance.now() - noteStart;
+        onProgress?.(36, '正在评测：数据读写...');
+
+        const ioPrefix = `benchmark-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const ioRecords = [];
+        const ioStart = performance.now();
+        const now = new Date().toISOString();
+        try {
+            for (let i = 0; i < dataset.ioItems; i++) {
+                const id = `${ioPrefix}-${i}`;
+                const rec = {
+                    id,
+                    title: `Bench ${i}`,
+                    type: 'text',
+                    content: dataset.notes[i % dataset.notes.length].content,
+                    notebookId: null,
+                    order: Date.now() + i,
+                    createdAt: now,
+                    updatedAt: now
+                };
+                ioRecords.push(id);
+                await this.app.db.update('notes', rec);
+                if (i % 30 === 0) await yieldFrame();
+            }
+
+            for (let i = 0; i < ioRecords.length; i++) {
+                const got = await this.app.db.get('notes', ioRecords[i]);
+                noteChecksum += got?.title?.length || 0;
+                if (i % 40 === 0) await yieldFrame();
+            }
+        } finally {
+            for (let i = 0; i < ioRecords.length; i++) {
+                await this.app.db.delete('notes', ioRecords[i]);
+                if (i % 40 === 0) await yieldFrame();
+            }
+        }
+        const ioMs = performance.now() - ioStart;
+        onProgress?.(72, '正在评测：元素渲染...');
+
+        const elementStart = performance.now();
+        if (sandboxEl) {
+            sandboxEl.innerHTML = '';
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < dataset.elementBlocks; i++) {
+                const card = document.createElement('div');
+                card.className = 'backup-card';
+                card.innerHTML = `<h5>Block ${i}</h5><p>${dataset.notes[i % dataset.notes.length].title}</p>`;
+                frag.appendChild(card);
+            }
+            sandboxEl.appendChild(frag);
+            await yieldFrame();
+            noteChecksum += sandboxEl.childElementCount;
+            sandboxEl.innerHTML = '';
+        } else {
+            for (let i = 0; i < dataset.elementBlocks; i++) {
+                noteChecksum += (i * 13) % 29;
+            }
+        }
+        const elementMs = performance.now() - elementStart;
+
+        // Weights target million-scale scores while keeping dimensions linearly comparable.
+        const note = this._benchmarkScoreFromMs(noteMs, 3200000);
+        const io = this._benchmarkScoreFromMs(ioMs, 3400000);
+        const element = this._benchmarkScoreFromMs(elementMs, 3000000);
+        // Small deterministic tie-breaker avoids identical totals on near-equal runs.
+        const total = note + io + element + (noteChecksum % 97);
+
+        return { note, io, element, total, noteMs, ioMs, elementMs };
     }
     
     async updateDeveloperInfo() {

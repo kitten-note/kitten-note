@@ -1892,7 +1892,10 @@ class KittenNoteApp {
     }
 }
 
+document.getElementById('boot-loading')?.classList.add('hidden');
+
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('boot-loading')?.classList.add('hidden');
     window.kittenNote = new KittenNoteApp();
 });

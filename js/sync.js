@@ -21,6 +21,8 @@
  * P2P sync using WebRTC with QR code signaling (no server required)
  */
 
+const SYNC_PROGRESS_TICKER_INTERVAL = 250;
+
 export class SyncManager {
     constructor(db, app) {
         this.db = db;
@@ -49,6 +51,11 @@ export class SyncManager {
         this.sendQueue = [];
         this.channelReady = false;
         this.syncInProgress = false;
+        this.syncBytesTransferred = 0;
+        this.syncProgressTimer = null;
+        this.lastSyncProgressPercent = 0;
+        this.lastSyncProgressText = '';
+        this.configuredDataChannels = new WeakSet();
         
         this.init();
     }
@@ -198,7 +205,8 @@ export class SyncManager {
         const singleRendered = this.tryRenderSingleQRCode(compressed, container);
 
         if (singleRendered) {
-            const svgMarkup = container.innerHTML;
+            // The SVG is inside the sync-qr-display wrapper; capture just the inner SVG
+            const svgMarkup = container.querySelector('svg')?.outerHTML || container.innerHTML;
             const controls = document.createElement('div');
             controls.className = 'sync-qr-controls';
 
@@ -267,6 +275,12 @@ export class SyncManager {
             qr.make();
             currentSvgMarkup = qr.createSvgTag({ scalable: true });
             qrDisplay.innerHTML = currentSvgMarkup;
+            const svg = qrDisplay.querySelector('svg');
+            if (svg) {
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                svg.style.maxWidth = '100%';
+                svg.style.maxHeight = '100%';
+            }
             indicator.textContent = `${index + 1} / ${chunks.length}`;
             prevBtn.disabled = index === 0;
             nextBtn.disabled = index === chunks.length - 1;
@@ -288,7 +302,18 @@ export class SyncManager {
             const qr = this.qrGenerator(0, 'L');
             qr.addData(compressed);
             qr.make();
-            container.innerHTML = qr.createSvgTag({ scalable: true });
+            // Wrap in sync-qr-display for consistent sizing and overflow prevention
+            const display = document.createElement('div');
+            display.className = 'sync-qr-display';
+            display.innerHTML = qr.createSvgTag({ scalable: true });
+            const svg = display.querySelector('svg');
+            if (svg) {
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                svg.style.maxWidth = '100%';
+                svg.style.maxHeight = '100%';
+            }
+            container.innerHTML = '';
+            container.appendChild(display);
             return true;
         } catch (error) {
             console.warn('QR overflow, fallback to chunked:', error);
@@ -541,6 +566,10 @@ export class SyncManager {
     }
     
     closeWizard() {
+        if (this.syncInProgress) {
+            this.app.Toast?.show('同步进行中，暂时不能关闭窗口', 'info');
+            return;
+        }
         const dialog = document.getElementById('sync-dialog');
         dialog?.classList.add('hidden');
         this.resetWizard();
@@ -1015,11 +1044,19 @@ export class SyncManager {
     }
     
     setupDataChannel(channel) {
+        if (!channel || this.configuredDataChannels.has(channel)) {
+            return;
+        }
+        this.configuredDataChannels.add(channel);
+
         // Chunk reassembly buffer
         const chunkBuffers = new Map();
         
         channel.addEventListener('message', (event) => {
             try {
+                // Track received bytes for speed display
+                this.syncBytesTransferred += (event.data?.length || 0);
+
                 const parsed = JSON.parse(event.data);
                 
                 // Handle chunked messages
@@ -1081,6 +1118,7 @@ export class SyncManager {
         this.sendQueue = [];
         this.channelReady = false;
         this.syncInProgress = false;
+        this.stopSyncProgressTicker();
     }
     
     // ======== Connection Success ========
@@ -1115,19 +1153,27 @@ export class SyncManager {
 
             this.syncInProgress = true;
             this.syncStartTime = Date.now();
-            this.app.logger?.info('sync started. sending data to the peer...');
+            this.syncBytesTransferred = 0;
+            this.startSyncProgressTicker();
+            this.app.logger?.info('sync started. sending manifest to the peer...');
 
             // Hide sync button, show progress
             const syncBtn = document.getElementById('sync-start-sync');
             const progressArea = document.getElementById('sync-progress-area');
             if (syncBtn) syncBtn.classList.add('hidden');
             if (progressArea) progressArea.classList.remove('hidden');
-            this.updateSyncProgress(0, '正在发送同步请求...');
-            
-            // Send sync request
+            this.updateSyncProgress(0, '正在构建本地清单...');
+
+            // Build local manifest (lightweight – no OPFS reads)
+            const manifest = await this.buildManifest();
+
+            this.updateSyncProgress(5, '正在发送同步请求...');
+
+            // Send sync request with manifest so the peer can compute the delta
             await this.sendMessage({
                 type: 'sync_request',
                 deviceId: this.deviceId,
+                manifest,
                 timestamp: new Date().toISOString()
             });
             
@@ -1142,18 +1188,52 @@ export class SyncManager {
     }
 
     updateSyncProgress(percent, text) {
+        if (typeof percent === 'number') {
+            this.lastSyncProgressPercent = percent;
+        }
+        if (typeof text === 'string' && text.length > 0) {
+            this.lastSyncProgressText = text;
+        }
+
         const bar = document.getElementById('sync-progress-bar');
         const label = document.getElementById('sync-progress-text');
         if (bar) bar.style.width = `${percent}%`;
-        if (label && text) {
+        if (label) {
+            const displayText = text || this.lastSyncProgressText;
+            if (!displayText) return;
             let speedInfo = '';
-            if (this.syncStartTime && percent > 0) {
+            if (this.syncStartTime && percent > 0 && this.syncBytesTransferred > 0) {
                 const elapsed = (Date.now() - this.syncStartTime) / 1000;
-                if (elapsed > 0.5) {
-                    speedInfo = ` (${elapsed.toFixed(1)}s)`;
+                if (elapsed > 0.3) {
+                    const bps = this.syncBytesTransferred / elapsed;
+                    if (bps >= 1024 * 1024) {
+                        speedInfo = ` · ${(bps / 1024 / 1024).toFixed(1)} MB/s`;
+                    } else if (bps >= 1024) {
+                        speedInfo = ` · ${(bps / 1024).toFixed(1)} KB/s`;
+                    } else {
+                        speedInfo = ` · ${Math.round(bps)} B/s`;
+                    }
                 }
             }
-            label.textContent = text + speedInfo;
+            label.textContent = displayText + speedInfo;
+        }
+    }
+
+    startSyncProgressTicker() {
+        this.stopSyncProgressTicker();
+        this.syncProgressTimer = setInterval(() => {
+            if (!this.syncInProgress) {
+                this.stopSyncProgressTicker();
+                return;
+            }
+            this.updateSyncProgress(this.lastSyncProgressPercent, this.lastSyncProgressText || '同步进行中...');
+        }, SYNC_PROGRESS_TICKER_INTERVAL);
+    }
+
+    stopSyncProgressTicker() {
+        if (this.syncProgressTimer) {
+            clearInterval(this.syncProgressTimer);
+            this.syncProgressTimer = null;
         }
     }
 
@@ -1162,6 +1242,10 @@ export class SyncManager {
         const progressArea = document.getElementById('sync-progress-area');
         if (syncBtn) syncBtn.classList.remove('hidden');
         if (progressArea) progressArea.classList.add('hidden');
+        this.syncBytesTransferred = 0;
+        this.stopSyncProgressTicker();
+        this.lastSyncProgressPercent = 0;
+        this.lastSyncProgressText = '';
         this.updateSyncProgress(0, '');
     }
     
@@ -1179,10 +1263,14 @@ export class SyncManager {
                     break;
                 case 'sync_ack':
                     console.log('Sync acknowledged by peer');
-                    this.updateSyncProgress(80, '正在合并对方数据...');
+                    this.updateSyncProgress(55, '正在合并对方数据...');
                     // Bidirectional: sync_ack may include peer's data
                     if (message.notes || message.notebooks || message.folders) {
-                        const counts = await this.mergeRemoteData(message);
+                        const counts = await this.mergeRemoteData(message, (current, total) => {
+                            const ratio = total > 0 ? (current / total) : 1;
+                            const pct = 55 + Math.round(ratio * 40);
+                            this.updateSyncProgress(pct, `正在合并对方数据... ${current}/${total}`);
+                        });
                         this.updateSyncProgress(100, `同步完成：${counts.folders} 文件夹, ${counts.notebooks} 笔记本, ${counts.notes} 笔记`);
                         this.app.Toast?.show(`同步完成！${counts.folders} 文件夹, ${counts.notebooks} 笔记本, ${counts.notes} 笔记`, 'success');
                         await this.app.directoryTree?.render();
@@ -1203,6 +1291,7 @@ export class SyncManager {
         } catch (error) {
             console.error('Failed to handle sync message:', error);
             this.syncInProgress = false;
+            this.stopSyncProgressTicker();
         }
     }
     
@@ -1215,27 +1304,49 @@ export class SyncManager {
 
         this.syncInProgress = true;
         this.syncStartTime = Date.now();
+        this.syncBytesTransferred = 0;
+        this.startSyncProgressTicker();
 
         // Show progress on receiving end too
         const syncBtn = document.getElementById('sync-start-sync');
         const progressArea = document.getElementById('sync-progress-area');
         if (syncBtn) syncBtn.classList.add('hidden');
         if (progressArea) progressArea.classList.remove('hidden');
-        this.updateSyncProgress(20, '正在准备本地数据...');
+        this.updateSyncProgress(20, '正在计算增量数据...');
 
         try {
-            // Get all data to send
-            const notes = await this.db.getAllNotes();
-            const notebooks = await this.db.getAllNotebooks();
-            const folders = await this.db.getAllFolders();
+            const peerManifest = message.manifest || { notes: {}, notebooks: {}, folders: {} };
+
+            // Load local data (raw IDB for structure, full notes only where needed)
+            const [rawNotes, notebooks, folders] = await Promise.all([
+                this.db.getAll('notes'),
+                this.db.getAllNotebooks(),
+                this.db.getAllFolders()
+            ]);
+
+            // Compute what the peer is missing or has stale versions of
+            const foldersToSend   = this.getItemsNeededByPeer(folders,   peerManifest.folders);
+            const notebooksToSend = this.getItemsNeededByPeer(notebooks, peerManifest.notebooks);
+            const staleNoteIds    = this.getItemsNeededByPeer(rawNotes,  peerManifest.notes).map(n => n.id);
+
+            // Fetch full content only for the notes that actually need to be sent
+            const notesToSend = await this.getNotesByIds(staleNoteIds);
+
+            // Build local manifest so the peer can compute what to send back
+            const localManifest = {
+                notes:     Object.fromEntries(rawNotes.map(n => [n.id, n.updatedAt])),
+                notebooks: Object.fromEntries(notebooks.map(n => [n.id, n.updatedAt])),
+                folders:   Object.fromEntries(folders.map(f => [f.id, f.updatedAt]))
+            };
             
-            this.updateSyncProgress(40, '正在发送数据...');
+            this.updateSyncProgress(40, `正在发送数据 (${notesToSend.length} 笔记, ${notebooksToSend.length} 笔记本, ${foldersToSend.length} 文件夹)...`);
             
             await this.sendMessage({
                 type: 'sync_data',
-                notes: notes,
-                notebooks: notebooks,
-                folders: folders,
+                notes:     notesToSend,
+                notebooks: notebooksToSend,
+                folders:   foldersToSend,
+                manifest:  localManifest,
                 timestamp: new Date().toISOString()
             });
 
@@ -1253,21 +1364,34 @@ export class SyncManager {
         this.updateSyncProgress(50, '正在合并远端数据...');
         
         try {
-            const mergedCount = await this.mergeRemoteData(message);
+            const mergedCount = await this.mergeRemoteData(message, (current, total) => {
+                const ratio = total > 0 ? (current / total) : 1;
+                const pct = 50 + Math.round(ratio * 30);
+                this.updateSyncProgress(pct, `正在合并远端数据... ${current}/${total}`);
+            });
             
-            this.updateSyncProgress(70, '正在发送本地数据...');
+            this.updateSyncProgress(70, '正在计算并发送本地增量数据...');
 
-            // Send acknowledgment + own data back for bidirectional sync
+            // Use the peer's manifest (included in sync_data) to decide what to send back
             if (this.isChannelOpen()) {
-                const localNotes = await this.db.getAllNotes();
-                const localNotebooks = await this.db.getAllNotebooks();
-                const localFolders = await this.db.getAllFolders();
+                const peerManifest = message.manifest || { notes: {}, notebooks: {}, folders: {} };
+
+                const [rawNotes, localNotebooks, localFolders] = await Promise.all([
+                    this.db.getAll('notes'),
+                    this.db.getAllNotebooks(),
+                    this.db.getAllFolders()
+                ]);
+
+                const foldersToSend   = this.getItemsNeededByPeer(localFolders,   peerManifest.folders);
+                const notebooksToSend = this.getItemsNeededByPeer(localNotebooks, peerManifest.notebooks);
+                const staleNoteIds    = this.getItemsNeededByPeer(rawNotes,       peerManifest.notes).map(n => n.id);
+                const notesToSend     = await this.getNotesByIds(staleNoteIds);
                 
                 await this.sendMessage({
                     type: 'sync_ack',
-                    notes: localNotes,
-                    notebooks: localNotebooks,
-                    folders: localFolders,
+                    notes:     notesToSend,
+                    notebooks: notebooksToSend,
+                    folders:   foldersToSend,
                     timestamp: new Date().toISOString()
                 });
                 
@@ -1300,9 +1424,12 @@ export class SyncManager {
      * Merge remote data (folders, notebooks, notes) into local DB.
      * Returns counts of merged items.
      */
-    async mergeRemoteData(message) {
+    async mergeRemoteData(message, onProgress) {
         const { notes, notebooks, folders } = message;
         let mergedCount = { notes: 0, notebooks: 0, folders: 0 };
+        const totalItems = (folders?.length || 0) + (notebooks?.length || 0) + (notes?.length || 0);
+        let processedItems = 0;
+        const tick = () => onProgress?.(processedItems, totalItems);
         
         // Merge folders first (parents before children)
         if (folders && folders.length > 0) {
@@ -1316,6 +1443,8 @@ export class SyncManager {
                 } catch (e) {
                     console.warn('Failed to merge folder:', folder.id, e);
                 }
+                processedItems++;
+                tick();
             }
         }
         
@@ -1331,6 +1460,8 @@ export class SyncManager {
                 } catch (e) {
                     console.warn('Failed to merge notebook:', notebook.id, e);
                 }
+                processedItems++;
+                tick();
             }
         }
         
@@ -1346,11 +1477,55 @@ export class SyncManager {
                 } catch (e) {
                     console.warn('Failed to merge note:', note.id, e);
                 }
+                processedItems++;
+                tick();
             }
         }
         
         console.log(`Sync merge: ${mergedCount.folders} folders, ${mergedCount.notebooks} notebooks, ${mergedCount.notes} notes`);
         return mergedCount;
+    }
+
+    // ======== Delta-sync helpers ========
+
+    /**
+     * Build a lightweight manifest of local data: { notes, notebooks, folders }
+     * where each value is a map of id → updatedAt.
+     * Uses raw IDB reads so OPFS block data is never read unnecessarily.
+     */
+    async buildManifest() {
+        const [rawNotes, notebooks, folders] = await Promise.all([
+            this.db.getAll('notes'),       // raw IDB records – no OPFS reads
+            this.db.getAllNotebooks(),
+            this.db.getAllFolders()
+        ]);
+        return {
+            notes:     Object.fromEntries(rawNotes.map(n => [n.id, n.updatedAt])),
+            notebooks: Object.fromEntries(notebooks.map(n => [n.id, n.updatedAt])),
+            folders:   Object.fromEntries(folders.map(f => [f.id, f.updatedAt]))
+        };
+    }
+
+    /**
+     * From a list of local items, return only those that the peer is missing
+     * or that are newer than what the peer has.
+     * @param {Array}  localItems   – local records with at least {id, updatedAt}
+     * @param {Object} peerManifest – peer's { id: updatedAt } map for this store
+     */
+    getItemsNeededByPeer(localItems, peerManifest) {
+        return localItems.filter(item => {
+            const peerUpdatedAt = peerManifest?.[item.id];
+            if (!peerUpdatedAt) return true; // peer doesn't have it
+            return new Date(item.updatedAt) > new Date(peerUpdatedAt);
+        });
+    }
+
+    /**
+     * Fetch full note content (OPFS-aware) for a specific set of note IDs.
+     */
+    async getNotesByIds(ids) {
+        const notes = await Promise.all(ids.map(id => this.db.getNote(id)));
+        return notes.filter(Boolean);
     }
 
     // ======== Utilities ========
@@ -1409,11 +1584,13 @@ export class SyncManager {
                     }
                     
                     channel.send(wrapper);
+                    this.syncBytesTransferred += wrapper.length;
                 }
                 return true;
             }
             
             channel.send(data);
+            this.syncBytesTransferred += data.length;
             return true;
         }
 
@@ -1456,9 +1633,11 @@ export class SyncManager {
             return;
         }
         
+        const manifest = await this.buildManifest();
         await this.sendMessage({
             type: 'sync_request',
             deviceId: this.deviceId,
+            manifest,
             timestamp: new Date().toISOString()
         });
     }

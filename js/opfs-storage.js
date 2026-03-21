@@ -68,6 +68,7 @@ export class OPFSBlockStorage {
         this._root = await opfsRoot.getDirectoryHandle(ROOT_DIR, { create: true });
         this._notesDir = await this._root.getDirectoryHandle(NOTES_DIR, { create: true });
         this._masterIndex = await this._loadMasterIndex();
+        await this._rebuildMasterIndexFromNoteDirs();
     }
 
     // -------------------------------------------------------------------------
@@ -90,6 +91,34 @@ export class OPFSBlockStorage {
         const writable = await fileHandle.createWritable();
         await writable.write(JSON.stringify(this._masterIndex));
         await writable.close();
+    }
+
+    async _rebuildMasterIndexFromNoteDirs() {
+        const noteDirs = await this.listNoteDirectories();
+        if (!noteDirs.length) return;
+
+        let changed = false;
+        for (const noteId of noteDirs) {
+            if (this._masterIndex?.[noteId]) continue;
+            try {
+                const noteDir = await this._getNoteDir(noteId, false);
+                const noteIndex = await this._loadNoteIndex(noteDir);
+                if (!noteIndex?.blocks?.length) continue;
+                this._masterIndex[noteId] = {
+                    totalSize: noteIndex.totalSize || 0,
+                    blockCount: noteIndex.blocks.length,
+                    hash: noteIndex.hash || '',
+                    updatedAt: noteIndex.updatedAt || null
+                };
+                changed = true;
+            } catch (err) {
+                console.warn(`[OPFS] Failed to rebuild index for note ${noteId}:`, err);
+            }
+        }
+
+        if (changed) {
+            await this._saveMasterIndex();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -582,11 +611,19 @@ export class OPFSBlockStorage {
      * Import an OPFS mirror from backup data.
      * @param {Object} mirrorFiles - Map of { path: Uint8Array }
      */
-    async importMirror(mirrorFiles) {
-        for (const [path, data] of Object.entries(mirrorFiles)) {
+    async importMirror(mirrorFiles, onProgress) {
+        const entries = Object.entries(mirrorFiles || {});
+        const total = entries.length || 1;
+        let processed = 0;
+        const YIELD_INTERVAL = 8;
+        for (const [path, data] of entries) {
             // Path format: kittennote/notes/<noteId>/block_0.bin etc.
             const parts = path.split('/');
-            if (parts[0] !== ROOT_DIR) continue;
+            if (parts[0] !== ROOT_DIR) {
+                processed++;
+                onProgress?.(processed, total);
+                continue;
+            }
 
             if (parts.length === 2) {
                 // Root-level file (e.g., _index.json)
@@ -604,10 +641,18 @@ export class OPFSBlockStorage {
                 await writable.write(data);
                 await writable.close();
             }
+            processed++;
+            onProgress?.(processed, total);
+            if (processed % YIELD_INTERVAL === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
         }
 
         // Reload master index
         this._masterIndex = await this._loadMasterIndex();
+        if (!this._masterIndex || Object.keys(this._masterIndex).length === 0) {
+            await this._rebuildMasterIndexFromNoteDirs();
+        }
     }
 
     // -------------------------------------------------------------------------

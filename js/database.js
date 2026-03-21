@@ -25,12 +25,19 @@ import { OPFSBlockStorage } from './opfs-storage.js';
 
 const DB_NAME = 'KittenNoteDB';
 const DB_VERSION = 3;
+const IMPORT_BATCH_SIZE = 100;
+const IMPORT_FINALIZE_TIMEOUT_MS = 45000;
 
 export class Database {
     constructor() {
         this.db = null;
         this.storageEngine = 'indexeddb'; // 'indexeddb' or 'opfs'
         this.opfs = null;
+    }
+
+    _isDbClosingError(error) {
+        const message = error?.message || '';
+        return error?.name === 'InvalidStateError' && message.includes('database connection is closing');
     }
     
     async init() {
@@ -793,10 +800,16 @@ export class Database {
     }
 
     async exportAllData() {
-        const [folders, notebooks, notes, devices, syncLog, settings, modelChunks] = await Promise.all([
+        // In OPFS mode, keep __opfs__ markers in notes to avoid duplicating content
+        // that is already stored in the OPFS mirror. In IndexedDB mode, read full
+        // note content via the OPFS-aware accessor.
+        const notesForExport = this.storageEngine === 'opfs'
+            ? await this.getAll('notes')   // raw IDB records – content stored in mirror
+            : await this.getAllNotes();    // full content for IndexedDB backups
+
+        const [folders, notebooks, devices, syncLog, settings, modelChunks] = await Promise.all([
             this.getAll('folders'),
             this.getAll('notebooks'),
-            this.getAllNotes(), // Use OPFS-aware method to export full note content
             this.getAll('devices'),
             this.getAll('syncLog'),
             this.getAll('settings'),
@@ -809,7 +822,7 @@ export class Database {
             stores: {
                 folders,
                 notebooks,
-                notes,
+                notes: notesForExport,
                 devices,
                 syncLog,
                 settings,
@@ -817,7 +830,7 @@ export class Database {
             }
         };
 
-        // If OPFS is active, include OPFS mirror data
+        // OPFS mode: include OPFS mirror so the backup is self-contained
         if (this.storageEngine === 'opfs' && this.opfs) {
             result.opfsMirror = await this.opfs.exportMirror();
         }
@@ -825,35 +838,255 @@ export class Database {
         return result;
     }
 
-    async importAllData(payload) {
+    async importAllData(payload, onProgress) {
         if (!payload?.stores) {
             throw new Error('Invalid backup data');
         }
 
         const storeNames = ['folders', 'notebooks', 'notes', 'devices', 'syncLog', 'settings', 'modelChunks'];
+        const backupSettings = payload.stores.settings || [];
+        const normalizedSettings = [
+            ...backupSettings.filter(item => item?.key !== 'storageEngine'),
+            { key: 'storageEngine', value: 'indexeddb' }
+        ];
+
+        const totalEntries = storeNames.reduce((sum, name) => sum + (payload.stores[name]?.length || 0), 0);
+        let importedEntries = 0;
+        onProgress?.(0, Math.max(totalEntries, 1), '准备导入数据库...');
+
+        // 1) Clear stores first
         await new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(storeNames, 'readwrite');
-
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error || new Error('Import failed'));
-
-            storeNames.forEach((name) => {
-                const store = transaction.objectStore(name);
-                store.clear();
-                const entries = payload.stores[name] || [];
-                entries.forEach((item) => {
-                    store.put(item);
-                });
-            });
+            const tx = this.db.transaction(storeNames, 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error || new Error('Import clear failed'));
+            storeNames.forEach((name) => tx.objectStore(name).clear());
         });
 
-        // Re-detect storage engine from imported settings
-        await this._initStorageEngine();
-
-        // Import OPFS mirror if present
-        if (payload.opfsMirror && this.storageEngine === 'opfs' && this.opfs) {
-            await this.opfs.importMirror(payload.opfsMirror);
+        // 2) Import in batches so UI can update without freezing
+        for (const name of storeNames) {
+            const entries = name === 'settings'
+                ? normalizedSettings
+                : (payload.stores[name] || []);
+            for (let i = 0; i < entries.length; i += IMPORT_BATCH_SIZE) {
+                const chunk = entries.slice(i, i + IMPORT_BATCH_SIZE);
+                await new Promise((resolve, reject) => {
+                    const tx = this.db.transaction([name], 'readwrite');
+                    const store = tx.objectStore(name);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error || new Error(`Import ${name} failed`));
+                    chunk.forEach((item) => store.put(item));
+                });
+                importedEntries += chunk.length;
+                onProgress?.(importedEntries, Math.max(totalEntries, 1), `正在导入 ${name}...`);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
         }
+
+        // 3) Force all imports to end in IndexedDB mode, ignoring backup engine preference
+        this.storageEngine = 'indexeddb';
+        this.opfs = null;
+        await this.setSetting('storageEngine', 'indexeddb');
+
+        const finalizeBase = Math.max(totalEntries - 1, 0);
+        onProgress?.(finalizeBase, Math.max(totalEntries, 1), '正在整理存储结构...');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        // 4) Ensure notes are stored consistently with the active engine
+        const finalizeProgress = (current, total, message) => {
+            const ratio = total > 0 ? Math.max(0, Math.min(current, total)) / total : 1;
+            const normalized = finalizeBase + ratio;
+            onProgress?.(normalized, Math.max(totalEntries, 1), message || '正在整理存储结构...');
+        };
+        await this._ensureImportConsistency(payload.opfsMirror, finalizeProgress);
+        onProgress?.(Math.max(totalEntries, 1), Math.max(totalEntries, 1), '导入完成');
+    }
+
+    /**
+     * After an import + engine re-init, make sure every note's content lives in
+     * the right place:
+     *
+     * • OPFS mode  – import the OPFS mirror first, then move any note whose
+     *   content is still fully inlined in IDB over to OPFS and replace the IDB
+     *   record with the '__opfs__' sentinel.
+     *
+     * • IndexedDB mode – if some notes carry '__opfs__' markers (backup was
+     *   created in OPFS mode), resolve them using the embedded OPFS mirror via
+     *   a temporary OPFS instance.  If resolution is impossible, set an empty
+     *   content value so the app stays functional.
+     */
+    async _ensureImportConsistency(opfsMirror, onProgress) {
+        const rawNotesForProgress = await this.getAll('notes');
+        const opfsNotesForProgress = rawNotesForProgress.filter(n => n.content === '__opfs__');
+        const totalSteps = (this.storageEngine === 'opfs' ? rawNotesForProgress.length : opfsNotesForProgress.length) + (opfsMirror ? 1 : 0);
+        let doneSteps = 0;
+        const tick = (message) => onProgress?.(doneSteps, Math.max(totalSteps, 1), message);
+
+        if (this.storageEngine === 'opfs' && this.opfs) {
+            // 1. Import mirror so OPFS has the authoritative block data
+            if (opfsMirror) {
+                await this.opfs.importMirror(opfsMirror, (current, total) => {
+                    const pct = total > 0 ? Math.round((current / total) * 100) : 100;
+                    onProgress?.(doneSteps + (total > 0 ? current / total : 1), Math.max(totalSteps, 1), `正在恢复 OPFS 文件... ${pct}%`);
+                });
+                doneSteps++;
+                tick('OPFS 文件恢复完成，正在整理笔记内容...');
+            }
+
+            // 2. Move any note whose content is still fully inlined in IDB into OPFS
+            const rawNotes = rawNotesForProgress;
+            for (const note of rawNotes) {
+                if (note.content !== '__opfs__' && note.content !== null && note.content !== undefined) {
+                    if (!this.opfs.hasNote(note.id)) {
+                        await this.opfs.writeNoteContent(note.id, note.content);
+                    }
+                    await this.update('notes', { ...note, content: '__opfs__' });
+                }
+                doneSteps++;
+                if (doneSteps % 20 === 0) {
+                    tick(`正在整理存储结构... ${doneSteps}/${Math.max(totalSteps, 1)}`);
+                    await new Promise((resolve) => setTimeout(resolve, 0));
+                }
+            }
+            tick('正在整理存储结构...');
+        } else {
+            // IndexedDB mode – resolve any leftover __opfs__ markers
+            const opfsNotes = opfsNotesForProgress;
+            if (opfsNotes.length === 0) return;
+
+            const resolveFromMirrorData = async () => {
+                await this._resolveOpfsNotesFromMirrorData(opfsNotes, opfsMirror, () => {
+                    doneSteps++;
+                });
+            };
+
+            if (opfsMirror && OPFSBlockStorage.isSupported()) {
+                // Use a temporary OPFS instance to read block data from the mirror
+                const tempOpfs = new OPFSBlockStorage();
+                try {
+                    await tempOpfs.init();
+                    await tempOpfs.importMirror(opfsMirror, (current, total) => {
+                        const pct = total > 0 ? Math.round((current / total) * 100) : 100;
+                        onProgress?.(doneSteps + (total > 0 ? current / total : 1), Math.max(totalSteps, 1), `正在读取 OPFS 备份内容... ${pct}%`);
+                    });
+                    doneSteps++;
+
+                    for (const note of opfsNotes) {
+                        const raw = await tempOpfs.readNoteContent(note.id);
+                        if (raw !== null) {
+                            let parsed = raw;
+                            try { parsed = JSON.parse(raw); } catch { /* raw may be plain text – keep as string */ }
+                            await this.update('notes', { ...note, content: parsed });
+                        } else {
+                            await this._clearOpfsMarker(note);
+                        }
+                        doneSteps++;
+                        if (doneSteps % 20 === 0) {
+                            tick(`正在整理存储结构... ${doneSteps}/${Math.max(totalSteps, 1)}`);
+                            await new Promise((resolve) => setTimeout(resolve, 0));
+                        }
+                    }
+
+                    await tempOpfs.clearAll();
+                } catch (e) {
+                    console.warn('[Import] Failed to resolve OPFS markers via mirror:', e);
+                    await resolveFromMirrorData();
+                }
+            } else if (opfsMirror) {
+                await resolveFromMirrorData();
+            } else {
+                // No mirror available – clear the sentinel so content is empty
+                // rather than the literal string '__opfs__'
+                for (const note of opfsNotes) {
+                    await this._clearOpfsMarker(note);
+                    doneSteps++;
+                }
+            }
+            tick('正在整理存储结构...');
+        }
+    }
+
+    async _resolveOpfsNotesFromMirrorData(opfsNotes, opfsMirror, onStep) {
+        for (const note of opfsNotes) {
+            const raw = this._extractNoteContentFromMirror(opfsMirror, note.id);
+            if (raw !== null) {
+                let parsed = raw;
+                try { parsed = JSON.parse(raw); } catch { /* raw may be plain text – keep as string */ }
+                await this.update('notes', { ...note, content: parsed });
+            } else {
+                await this._clearOpfsMarker(note);
+            }
+            onStep?.();
+        }
+    }
+
+    _extractNoteContentFromMirror(opfsMirror, noteId) {
+        if (!opfsMirror || !noteId) return null;
+        const toUint8Array = (value) => {
+            if (!value) return null;
+            if (value instanceof Uint8Array) return value;
+            if (value instanceof ArrayBuffer) return new Uint8Array(value);
+            if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+            if (Array.isArray(value)) return new Uint8Array(value);
+            return null;
+        };
+
+        const prefix = `kittennote/notes/${noteId}/`;
+        const indexBytes = toUint8Array(opfsMirror[`${prefix}index.json`]);
+        if (!indexBytes) return null;
+
+        let indexData = null;
+        try {
+            indexData = JSON.parse(new TextDecoder().decode(indexBytes));
+        } catch {
+            return null;
+        }
+
+        const blockCount = indexData?.blocks?.length || 0;
+        const blockChunks = [];
+        for (let i = 0; i < blockCount; i++) {
+            const blockBytes = toUint8Array(opfsMirror[`${prefix}block_${i}.bin`]);
+            if (!blockBytes) return null;
+            blockChunks.push(blockBytes);
+        }
+
+        const totalSize = blockChunks.reduce((sum, bytes) => sum + bytes.length, 0);
+        const merged = new Uint8Array(totalSize);
+        let offset = 0;
+        for (const bytes of blockChunks) {
+            merged.set(bytes, offset);
+            offset += bytes.length;
+        }
+
+        try {
+            return new TextDecoder().decode(merged);
+        } catch {
+            return null;
+        }
+    }
+
+    async _withTimeout(promise, timeoutMs, message) {
+        let timer = null;
+        let settled = false;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+                if (!settled) reject(new Error(message));
+            }, timeoutMs);
+        });
+        try {
+            const result = await Promise.race([promise, timeout]);
+            settled = true;
+            return result;
+        } finally {
+            settled = true;
+            if (timer) clearTimeout(timer);
+        }
+    }
+
+    /** Replace an unresolvable '__opfs__' content marker with an appropriate empty value. */
+    async _clearOpfsMarker(note) {
+        const emptyContent = note.type === 'ink'
+            ? { version: 2, strokes: [], images: [] }
+            : '';
+        await this.update('notes', { ...note, content: emptyContent });
     }
     
     // Devices
@@ -940,7 +1173,14 @@ export class Database {
     }
     
     async getModelChunks(modelName) {
-        return this.getByIndex('modelChunks', 'modelName', modelName);
+        try {
+            return await this.getByIndex('modelChunks', 'modelName', modelName);
+        } catch (error) {
+            if (this._isDbClosingError(error)) {
+                return [];
+            }
+            throw error;
+        }
     }
     
     async deleteModelChunks(modelName) {
