@@ -21,16 +21,15 @@
  * Handles offline caching and PWA functionality
  */
 
-const CACHE_NAME = 'kitten-note-v2-u2';
-const STATIC_CACHE = 'kitten-note-static-v2-u2';
-const DYNAMIC_CACHE = 'kitten-note-dynamic-v2-u2';
+const SHELL_CACHE = 'kitten-note-shell-v3';
+const RUNTIME_CACHE = 'kitten-note-runtime-v3';
 
-// Core assets to cache immediately
-const STATIC_ASSETS = [
+// Core shell assets precached on install.
+// Individual failures are tolerated by the per-asset allSettled below.
+const SHELL_ASSETS = [
     './',
     './index.html',
     './manifest.json',
-    './LICENSE',
     // CSS
     './css/styles.css',
     './css/themes.css',
@@ -40,16 +39,21 @@ const STATIC_ASSETS = [
     './js/app.js',
     './js/database.js',
     './js/directory-tree.js',
-    './js/text-editor.js',
+    './js/export.js',
     './js/ink-editor.js',
+    './js/nes.js',
+    './js/opfs-storage.js',
     './js/settings.js',
     './js/sync.js',
-    './js/nes.js',
-    './js/export.js',
+    './js/text-editor.js',
     './js/toast.js',
+    './js/crypto.js',
+    './js/utils.js',
+    './js/model-cache.js',
     // Icons
     './icons/favicon.ico',
     './icons/icon.svg',
+    './icons/round.png',
     './icons/icon-32.png',
     './icons/icon-72.png',
     './icons/icon-96.png',
@@ -60,7 +64,8 @@ const STATIC_ASSETS = [
     './icons/icon-256.png',
     './icons/icon-384.png',
     './icons/icon-512.png',
-    './icons/round.png',
+    './icons/icon-maskable-192.png',
+    './icons/icon-maskable-512.png',
     // FontAwesome
     './assets/fontawesome/css/all.min.css',
     './assets/fontawesome/webfonts/fa-solid-900.woff2',
@@ -68,27 +73,34 @@ const STATIC_ASSETS = [
     './assets/fontawesome/webfonts/fa-brands-400.woff2',
     // QR Code libraries
     './assets/qrcode/qrcode-generator.min.js',
-    './assets/qrcode/jsQR.min.js',
-    // Transformers.js for AI features
-    './assets/transformers.js/transformers.js',
-    './assets/transformers.js/ort-wasm-simd-threaded.jsep.mjs',
-    './assets/transformers.js/ort-wasm-simd-threaded.jsep.wasm',
-    // NES model metadata (for offline readiness)
-    './assets/nes-model/added_tokens.json',
-    './assets/nes-model/chat_template.jinja',
-    './assets/nes-model/config.json',
-    './assets/nes-model/generation_config.json',
-    './assets/nes-model/merges.txt',
-    './assets/nes-model/package-lock.json',
-    './assets/nes-model/package.json',
-    './assets/nes-model/run_onnx.js',
-    './assets/nes-model/special_tokens_map.json',
-    './assets/nes-model/tokenizer.json',
-    './assets/nes-model/tokenizer_config.json',
-    './assets/nes-model/vocab.json'
+    './assets/qrcode/jsQR.min.js'
 ];
 
 const COI_PARAM = 'coi';
+
+// Locally bundled AI runtime/model directories served cache-first from the runtime cache.
+const RUNTIME_PREFIXES = ['/assets/transformers.js/', '/assets/nes-model/'];
+
+const OFFLINE_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KittenNote - 离线</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f5f5f5;color:#333;font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;text-align:center}
+main{padding:2rem}
+h1{font-size:1.25rem;margin:0 0 .75rem}
+p{margin:0;color:#666;line-height:1.6}
+</style>
+</head>
+<body>
+<main>
+<h1>当前处于离线状态</h1>
+<p>无法连接到网络，且本地缓存不可用。<br>请检查网络连接后刷新页面重试。</p>
+</main>
+</body>
+</html>`;
 
 function shouldApplyCoi(request) {
     if (request.mode !== 'navigate') return false;
@@ -117,214 +129,214 @@ function withCoiHeaders(response) {
     });
 }
 
-// Install event - cache static assets
+// Install event - precache the app shell, tolerating individual failures
 self.addEventListener('install', (event) => {
-    console.log('[SW] Installing Service Worker...');
-    
     event.waitUntil(
-        caches.open(STATIC_CACHE)
-            .then((cache) => {
-                console.log('[SW] Caching static assets');
-                return cache.addAll(STATIC_ASSETS);
-            })
-            .then(() => {
-                console.log('[SW] Static assets cached');
-                // Notify all clients about the new version
-                return self.clients.matchAll().then((clients) => {
-                    clients.forEach((client) => {
-                        client.postMessage({ type: 'SW_UPDATE_AVAILABLE' });
-                    });
-                });
-            })
-            .catch((error) => {
-                console.error('[SW] Failed to cache static assets:', error);
-            })
+        caches.open(SHELL_CACHE).then(async (cache) => {
+            const results = await Promise.allSettled(
+                SHELL_ASSETS.map((url) => cache.add(url))
+            );
+            results.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    console.warn('[SW] Failed to precache:', SHELL_ASSETS[index], result.reason);
+                }
+            });
+        })
     );
 });
 
-// Activate event - clean up old caches
+// Activate event - remove stale caches, then take control of open clients
 self.addEventListener('activate', (event) => {
-    console.log('[SW] Activating Service Worker...');
-    
     event.waitUntil(
         caches.keys()
-            .then((cacheNames) => {
-                return Promise.all(
-                    cacheNames
-                        .filter((name) => {
-                            return name !== STATIC_CACHE && 
-                                   name !== DYNAMIC_CACHE &&
-                                   name.startsWith('kitten-note-');
-                        })
-                        .map((name) => {
-                            console.log('[SW] Deleting old cache:', name);
-                            return caches.delete(name);
-                        })
-                );
-            })
-            .then(() => {
-                console.log('[SW] Service Worker activated');
-                return self.clients.claim();
-            })
+            .then((cacheNames) => Promise.all(
+                cacheNames
+                    .filter((name) => {
+                        return name.startsWith('kitten-note-') &&
+                               name !== SHELL_CACHE &&
+                               name !== RUNTIME_CACHE;
+                    })
+                    .map((name) => caches.delete(name))
+            ))
+            .then(() => self.clients.claim())
     );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - route same-origin GET requests to the right strategy
 self.addEventListener('fetch', (event) => {
-    const request = event.request;
-    const url = new URL(request.url);
-    
-    // Skip non-GET requests
-    if (request.method !== 'GET') {
+    const { request } = event;
+
+    if (request.method !== 'GET') return;
+
+    let url;
+    try {
+        url = new URL(request.url);
+    } catch {
         return;
     }
-    
-    // Skip cross-origin requests
-    if (url.origin !== location.origin) {
+
+    if (url.origin !== self.location.origin) return;
+
+    // Navigations: network-first, cached index.html as fallback, offline page as last resort
+    if (request.mode === 'navigate') {
+        event.respondWith(handleNavigation(request));
         return;
     }
-    
-    // Handle model file separately (large file)
-    if (url.pathname.includes('nes-model')) {
-        event.respondWith(handleModelRequest(request));
+
+    // Bundled AI runtime / model files: runtime cache-first
+    if (RUNTIME_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) {
+        // .onnx model weights are persisted in IndexedDB by the page; never cache them here
+        if (url.pathname.endsWith('.onnx')) return;
+        event.respondWith(runtimeCacheFirst(request));
         return;
     }
-    
-    // Handle WASM files
-    if (url.pathname.includes('llama-cpp-wasm')) {
-        event.respondWith(handleWasmRequest(request));
+
+    // Shell-ish static assets: cache-first, network fallback
+    if (isShellAsset(url.pathname)) {
+        event.respondWith(shellCacheFirst(request));
         return;
     }
-    
-    // Cache-first strategy for static assets
-    if (isStaticAsset(url.pathname)) {
-        event.respondWith(cacheFirst(request));
-        return;
-    }
-    
-    // Network-first strategy for HTML
-    if (request.headers.get('accept')?.includes('text/html')) {
-        event.respondWith(networkFirst(request));
-        return;
-    }
-    
-    // Stale-while-revalidate for other assets
+
+    // Everything else same-origin: stale-while-revalidate
     event.respondWith(staleWhileRevalidate(request));
 });
 
-// Check if URL is a static asset
-function isStaticAsset(pathname) {
+function isShellAsset(pathname) {
     return pathname.endsWith('.js') ||
            pathname.endsWith('.css') ||
            pathname.endsWith('.woff2') ||
            pathname.endsWith('.svg') ||
            pathname.endsWith('.png') ||
-           pathname.endsWith('.ico');
+           pathname.endsWith('.ico') ||
+           pathname.endsWith('.json');
 }
 
-// Cache-first strategy
-async function cacheFirst(request) {
-    const cached = await caches.match(request);
-    if (cached) {
-        return cached;
+// Network-first navigation with COI header support
+async function handleNavigation(request) {
+    const applyCoi = shouldApplyCoi(request);
+
+    try {
+        const response = await fetch(request);
+        return applyCoi ? withCoiHeaders(response) : response;
+    } catch (error) {
+        console.warn('[SW] Navigation request failed:', request.url, error);
     }
-    
+
+    try {
+        const cache = await caches.open(SHELL_CACHE);
+        const cached = await cache.match('./index.html');
+        if (cached) {
+            return applyCoi ? withCoiHeaders(cached) : cached;
+        }
+    } catch (error) {
+        console.warn('[SW] Failed to read cached shell:', error);
+    }
+
+    const offline = new Response(OFFLINE_HTML, {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    });
+    return applyCoi ? withCoiHeaders(offline) : offline;
+}
+
+// Cache-first for runtime assets (transformers.js runtime, NES model metadata)
+async function runtimeCacheFirst(request) {
+    const cache = await caches.open(RUNTIME_CACHE);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
     try {
         const response = await fetch(request);
         if (response.ok) {
-            const cache = await caches.open(STATIC_CACHE);
-            cache.put(request, response.clone());
+            try {
+                await cache.put(request, response.clone());
+            } catch (error) {
+                console.warn('[SW] Failed to cache runtime asset:', request.url, error);
+            }
         }
         return response;
     } catch (error) {
-        console.error('[SW] Fetch failed:', error);
-        return new Response('Offline', { status: 503 });
+        console.warn('[SW] Runtime asset fetch failed:', request.url, error);
+        return new Response('', { status: 504 });
     }
 }
 
-// Network-first strategy
-async function networkFirst(request) {
+// Cache-first for shell-ish static assets, always resolving to a Response
+async function shellCacheFirst(request) {
+    try {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+    } catch (error) {
+        console.warn('[SW] Cache lookup failed:', request.url, error);
+    }
+
     try {
         const response = await fetch(request);
         if (response.ok) {
-            const cache = await caches.open(DYNAMIC_CACHE);
-            const finalResponse = shouldApplyCoi(request) ? withCoiHeaders(response) : response;
-            cache.put(request, finalResponse.clone());
-            return finalResponse;
+            try {
+                const cache = await caches.open(SHELL_CACHE);
+                await cache.put(request, response.clone());
+            } catch (error) {
+                console.warn('[SW] Failed to cache shell asset:', request.url, error);
+            }
         }
-        return shouldApplyCoi(request) ? withCoiHeaders(response) : response;
+        return response;
     } catch (error) {
-        const cached = await caches.match(request);
-        if (cached) {
-            return shouldApplyCoi(request) ? withCoiHeaders(cached) : cached;
-        }
-        return new Response('Offline', { status: 503 });
+        console.warn('[SW] Shell asset fetch failed:', request.url, error);
+        return new Response('', { status: 504 });
     }
 }
 
-// Stale-while-revalidate strategy
+// Stale-while-revalidate for all remaining same-origin requests
 async function staleWhileRevalidate(request) {
-    const cached = await caches.match(request);
-    
-    const fetchPromise = fetch(request)
-        .then((response) => {
+    let cached;
+    try {
+        cached = await caches.match(request);
+    } catch (error) {
+        console.warn('[SW] Cache lookup failed:', request.url, error);
+    }
+
+    const fetchPromise = (async () => {
+        try {
+            const response = await fetch(request);
             if (response.ok) {
-                caches.open(DYNAMIC_CACHE)
-                    .then((cache) => cache.put(request, response.clone()));
+                try {
+                    const cache = await caches.open(RUNTIME_CACHE);
+                    await cache.put(request, response.clone());
+                } catch (error) {
+                    console.warn('[SW] Failed to cache response:', request.url, error);
+                }
             }
             return response;
-        })
-        .catch(() => cached);
-    
-    return cached || fetchPromise;
-}
-
-// Handle WASM requests
-async function handleWasmRequest(request) {
-    const cached = await caches.match(request);
-    if (cached) {
-        return cached;
-    }
-    
-    try {
-        const response = await fetch(request);
-        if (response.ok) {
-            const cache = await caches.open(STATIC_CACHE);
-            cache.put(request, response.clone());
+        } catch (error) {
+            console.warn('[SW] Fetch failed:', request.url, error);
+            return null;
         }
-        return response;
-    } catch (error) {
-        return new Response('WASM not available', { status: 503 });
-    }
-}
+    })();
 
-// Handle model file requests (large files with progress)
-async function handleModelRequest(request) {
-    // Don't cache the model file in Service Worker
-    // It's stored in IndexedDB for better control
-    try {
-        return await fetch(request);
-    } catch (error) {
-        return new Response('Model not available', { status: 503 });
-    }
+    if (cached) return cached;
+
+    const response = await fetchPromise;
+    return response || new Response('', { status: 504 });
 }
 
 // Message handling for cache control
 self.addEventListener('message', (event) => {
     const { type, data } = event.data || {};
-    
+
     switch (type) {
         case 'SKIP_WAITING':
             self.skipWaiting();
             break;
-            
+
         case 'CACHE_URLS':
             if (data?.urls) {
-                caches.open(DYNAMIC_CACHE)
+                caches.open(RUNTIME_CACHE)
                     .then((cache) => cache.addAll(data.urls));
             }
             break;
-            
+
         case 'CLEAR_CACHE':
             caches.keys()
                 .then((names) => Promise.all(names.map(name => caches.delete(name))));
@@ -332,23 +344,10 @@ self.addEventListener('message', (event) => {
     }
 });
 
-// Background sync for offline changes
-self.addEventListener('sync', (event) => {
-    if (event.tag === 'sync-notes') {
-        event.waitUntil(syncNotes());
-    }
-});
-
-async function syncNotes() {
-    // This would sync pending changes when back online
-    // The actual implementation is in the main app
-    console.log('[SW] Background sync triggered');
-}
-
 // Push notifications (for future use)
 self.addEventListener('push', (event) => {
     const data = event.data?.json() || {};
-    
+
     const options = {
         body: data.body || 'New notification',
         icon: './icons/icon-192.png',
@@ -356,7 +355,7 @@ self.addEventListener('push', (event) => {
         vibrate: [100, 50, 100],
         data: data
     };
-    
+
     event.waitUntil(
         self.registration.showNotification(data.title || 'KittenNote', options)
     );
@@ -364,7 +363,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    
+
     event.waitUntil(
         clients.matchAll({ type: 'window' })
             .then((clientList) => {
@@ -375,5 +374,3 @@ self.addEventListener('notificationclick', (event) => {
             })
     );
 });
-
-console.log('[SW] Service Worker loaded');
