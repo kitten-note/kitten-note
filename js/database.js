@@ -24,7 +24,7 @@
 import { OPFSBlockStorage } from './opfs-storage.js';
 
 const DB_NAME = 'KittenNoteDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const IMPORT_BATCH_SIZE = 100;
 const IMPORT_FINALIZE_TIMEOUT_MS = 45000;
 
@@ -33,6 +33,7 @@ export class Database {
         this.db = null;
         this.storageEngine = 'indexeddb'; // 'indexeddb' or 'opfs'
         this.opfs = null;
+        this._snapshotStore = null; // dedicated OPFS instance for pre-import snapshots
     }
 
     _isDbClosingError(error) {
@@ -107,6 +108,13 @@ export class Database {
                 if (!db.objectStoreNames.contains('imageBlobs')) {
                     const imageStore = db.createObjectStore('imageBlobs', { keyPath: 'id' });
                     imageStore.createIndex('noteId', 'noteId', { unique: false });
+                }
+
+                // Tombstones store (delete propagation for sync)
+                if (!db.objectStoreNames.contains('tombstones')) {
+                    const tombstoneStore = db.createObjectStore('tombstones', { keyPath: 'id' });
+                    tombstoneStore.createIndex('deletedAt', 'deletedAt', { unique: false });
+                    tombstoneStore.createIndex('type', 'type', { unique: false });
                 }
             };
         });
@@ -510,9 +518,10 @@ export class Database {
      */
     async upsertFolder(data) {
         const existing = await this.getFolder(data.id);
+        let result;
         if (existing) {
             const updated = { ...existing, ...data, updatedAt: data.updatedAt || new Date().toISOString() };
-            return this.update('folders', updated);
+            result = await this.update('folders', updated);
         } else {
             // Ensure required fields
             const folder = {
@@ -524,11 +533,17 @@ export class Database {
                 updatedAt: data.updatedAt || new Date().toISOString(),
                 ...data
             };
-            return this.update('folders', folder);
+            result = await this.update('folders', folder);
         }
+        await this._supersedeTombstone('folder', data.id, result.updatedAt);
+        return result;
     }
     
-    async deleteFolder(id) {
+    async deleteFolder(id, options = {}) {
+        if (options.recordTombstone !== false) {
+            await this.addTombstone('folder', id);
+        }
+
         // Delete all child folders recursively
         const children = await this.getFolderChildren(id);
         for (const child of children) {
@@ -588,9 +603,10 @@ export class Database {
      */
     async upsertNotebook(data) {
         const existing = await this.getNotebook(data.id);
+        let result;
         if (existing) {
             const updated = { ...existing, ...data, updatedAt: data.updatedAt || new Date().toISOString() };
-            return this.update('notebooks', updated);
+            result = await this.update('notebooks', updated);
         } else {
             const notebook = {
                 id: data.id,
@@ -602,11 +618,17 @@ export class Database {
                 updatedAt: data.updatedAt || new Date().toISOString(),
                 ...data
             };
-            return this.update('notebooks', notebook);
+            result = await this.update('notebooks', notebook);
         }
+        await this._supersedeTombstone('notebook', data.id, result.updatedAt);
+        return result;
     }
     
-    async deleteNotebook(id) {
+    async deleteNotebook(id, options = {}) {
+        if (options.recordTombstone !== false) {
+            await this.addTombstone('notebook', id);
+        }
+
         // Delete all notes in this notebook
         const notes = await this.getByIndex('notes', 'notebookId', id);
         for (const note of notes) {
@@ -719,15 +741,16 @@ export class Database {
      */
     async upsertNote(data) {
         const existing = await this.get('notes', data.id); // Raw IDB get
+        let result;
         if (existing) {
             const updated = { ...existing, ...data, updatedAt: data.updatedAt || new Date().toISOString() };
 
             if (this.storageEngine === 'opfs' && this.opfs && data.content !== undefined) {
                 await this.opfs.writeNoteContent(data.id, data.content);
-                return this.update('notes', { ...updated, content: '__opfs__' });
+                result = await this.update('notes', { ...updated, content: '__opfs__' });
+            } else {
+                result = await this.update('notes', updated);
             }
-
-            return this.update('notes', updated);
         } else {
             const note = {
                 id: data.id,
@@ -743,19 +766,87 @@ export class Database {
 
             if (this.storageEngine === 'opfs' && this.opfs) {
                 await this.opfs.writeNoteContent(note.id, note.content);
-                return this.update('notes', { ...note, content: '__opfs__' });
+                result = await this.update('notes', { ...note, content: '__opfs__' });
+            } else {
+                result = await this.update('notes', note);
             }
-
-            return this.update('notes', note);
         }
+        await this._supersedeTombstone('note', data.id, result.updatedAt);
+        return result;
     }
     
-    async deleteNote(id) {
+    async deleteNote(id, options = {}) {
+        if (options.recordTombstone !== false) {
+            await this.addTombstone('note', id);
+        }
+
         // Also delete from OPFS if active
         if (this.storageEngine === 'opfs' && this.opfs) {
             await this.opfs.deleteNoteContent(id);
         }
         return this.delete('notes', id);
+    }
+
+    // ======== Tombstones (delete propagation for sync) ========
+
+    static tombstoneId(type, entityId) {
+        return `${type}:${entityId}`;
+    }
+
+    async addTombstone(type, entityId, deletedAt) {
+        const tombstone = {
+            id: Database.tombstoneId(type, entityId),
+            type,
+            entityId,
+            deletedAt: deletedAt || new Date().toISOString()
+        };
+        await this.update('tombstones', tombstone);
+        return tombstone;
+    }
+
+    async getTombstone(type, entityId) {
+        return this.get('tombstones', Database.tombstoneId(type, entityId));
+    }
+
+    async getAllTombstones() {
+        return this.getAll('tombstones');
+    }
+
+    async upsertTombstone(data) {
+        if (!data?.type || !data?.entityId) {
+            throw new Error('Invalid tombstone');
+        }
+        const tombstone = {
+            id: Database.tombstoneId(data.type, data.entityId),
+            type: data.type,
+            entityId: data.entityId,
+            deletedAt: data.deletedAt || new Date().toISOString()
+        };
+        await this.update('tombstones', tombstone);
+        return tombstone;
+    }
+
+    async deleteTombstone(type, entityId) {
+        try {
+            await this.delete('tombstones', Database.tombstoneId(type, entityId));
+        } catch {
+            // Never fail a write because tombstone cleanup failed
+        }
+    }
+
+    /**
+     * Remove an existing tombstone when a strictly newer edit arrives.
+     * (A re-created / re-imported item newer than the deletion wins.)
+     */
+    async _supersedeTombstone(type, entityId, updatedAt) {
+        try {
+            const tombstone = await this.getTombstone(type, entityId);
+            if (tombstone && new Date(updatedAt) >= new Date(tombstone.deletedAt)) {
+                await this.delete('tombstones', tombstone.id);
+            }
+        } catch (error) {
+            console.warn('[Tombstone] cleanup failed:', error);
+        }
     }
     
     // Settings
@@ -799,21 +890,24 @@ export class Database {
         }
     }
 
-    async exportAllData() {
+    async exportAllData(options = {}) {
         // In OPFS mode, keep __opfs__ markers in notes to avoid duplicating content
         // that is already stored in the OPFS mirror. In IndexedDB mode, read full
-        // note content via the OPFS-aware accessor.
-        const notesForExport = this.storageEngine === 'opfs'
+        // note content via the OPFS-aware accessor. `inlineContent` forces full
+        // content (used for pre-import snapshots, which must restore without a mirror).
+        const inlineContent = options.inlineContent === true;
+        const notesForExport = (this.storageEngine === 'opfs' && !inlineContent)
             ? await this.getAll('notes')   // raw IDB records – content stored in mirror
             : await this.getAllNotes();    // full content for IndexedDB backups
 
-        const [folders, notebooks, devices, syncLog, settings, modelChunks] = await Promise.all([
+        const [folders, notebooks, devices, syncLog, settings, modelChunks, tombstones] = await Promise.all([
             this.getAll('folders'),
             this.getAll('notebooks'),
             this.getAll('devices'),
             this.getAll('syncLog'),
             this.getAll('settings'),
-            this.getAll('modelChunks')
+            this.getAll('modelChunks'),
+            this.getAll('tombstones')
         ]);
 
         const result = {
@@ -826,24 +920,50 @@ export class Database {
                 devices,
                 syncLog,
                 settings,
-                modelChunks
+                modelChunks,
+                tombstones
             }
         };
 
         // OPFS mode: include OPFS mirror so the backup is self-contained
-        if (this.storageEngine === 'opfs' && this.opfs) {
+        if (this.storageEngine === 'opfs' && this.opfs && !inlineContent) {
             result.opfsMirror = await this.opfs.exportMirror();
         }
 
         return result;
     }
 
-    async importAllData(payload, onProgress) {
+    async importAllData(payload, onProgress, options = {}) {
         if (!payload?.stores) {
             throw new Error('Invalid backup data');
         }
 
-        const storeNames = ['folders', 'notebooks', 'notes', 'devices', 'syncLog', 'settings', 'modelChunks'];
+        // Reject backups written by a newer schema than this build understands.
+        if (payload.version !== undefined) {
+            if (typeof payload.version !== 'number' || Number.isNaN(payload.version)) {
+                throw new Error('备份文件的版本号无效');
+            }
+            if (payload.version > DB_VERSION) {
+                throw new Error(`备份版本（${payload.version}）高于当前应用支持的版本（${DB_VERSION}），请先升级应用`);
+            }
+        }
+
+        // Safety net: snapshot the current dataset BEFORE anything is cleared.
+        if (!options.skipSnapshot) {
+            try {
+                const snapshotStore = await this._getSnapshotStore();
+                if (snapshotStore) {
+                    // Full inline content so the snapshot restores without a mirror.
+                    const snapshotData = await this.exportAllData({ inlineContent: true });
+                    await snapshotStore.savePreImportSnapshot(snapshotData);
+                    console.info('[Import] Pre-import snapshot saved.');
+                }
+            } catch (error) {
+                console.warn('[Import] Failed to save pre-import snapshot:', error);
+            }
+        }
+
+        const storeNames = ['folders', 'notebooks', 'notes', 'devices', 'syncLog', 'settings', 'modelChunks', 'tombstones'];
         const backupSettings = payload.stores.settings || [];
         const normalizedSettings = [
             ...backupSettings.filter(item => item?.key !== 'storageEngine'),
@@ -898,6 +1018,49 @@ export class Database {
         };
         await this._ensureImportConsistency(payload.opfsMirror, finalizeProgress);
         onProgress?.(Math.max(totalEntries, 1), Math.max(totalEntries, 1), '导入完成');
+    }
+
+    /**
+     * Lazily create (or reuse) an OPFS instance used purely for pre-import
+     * snapshots. Returns null when OPFS is unavailable.
+     */
+    async _getSnapshotStore() {
+        if (this._snapshotStore) return this._snapshotStore;
+        if (!OPFSBlockStorage.isSupported()) return null;
+        try {
+            if (this.opfs) {
+                this._snapshotStore = this.opfs;
+            } else {
+                const store = new OPFSBlockStorage();
+                await store.init();
+                this._snapshotStore = store;
+            }
+            return this._snapshotStore;
+        } catch (error) {
+            console.warn('[Snapshot] OPFS unavailable for snapshots:', error);
+            return null;
+        }
+    }
+
+    /** Metadata about the most recent pre-import snapshot, or null. */
+    async getPreImportSnapshotInfo() {
+        const store = await this._getSnapshotStore();
+        if (!store) return null;
+        return store.readPreImportSnapshotInfo();
+    }
+
+    /** Restore the dataset captured before the last import. */
+    async restorePreImportSnapshot(onProgress) {
+        const store = await this._getSnapshotStore();
+        if (!store) {
+            throw new Error('当前环境不支持快照存储');
+        }
+        const snapshot = await store.loadPreImportSnapshot();
+        if (!snapshot?.data) {
+            throw new Error('未找到导入前快照');
+        }
+        await this.importAllData(snapshot.data, onProgress, { skipSnapshot: true });
+        return { savedAt: snapshot.savedAt };
     }
 
     /**
@@ -1156,42 +1319,69 @@ export class Database {
         });
     }
     
-    // Model storage
-    async saveModelChunk(modelName, chunkIndex, data) {
+    // Model storage (streamed chunks + manifest, consumed by js/model-cache.js)
+    async saveModelChunk(modelName, file, chunkIndex, data, sha256) {
         const chunk = {
-            id: `${modelName}_${chunkIndex}`,
+            id: `${modelName}::${file}::${chunkIndex}`,
             modelName,
+            file,
             chunkIndex,
             data,
+            sha256: sha256 || null,
             savedAt: new Date().toISOString()
         };
         return this.update('modelChunks', chunk);
     }
     
-    async getModelChunk(modelName, chunkIndex) {
-        return this.get('modelChunks', `${modelName}_${chunkIndex}`);
+    async getModelChunk(modelName, file, chunkIndex) {
+        return this.get('modelChunks', `${modelName}::${file}::${chunkIndex}`);
     }
     
-    async getModelChunks(modelName) {
+    async getModelChunks(modelName, file) {
+        let chunks;
         try {
-            return await this.getByIndex('modelChunks', 'modelName', modelName);
+            chunks = await this.getByIndex('modelChunks', 'modelName', modelName);
         } catch (error) {
             if (this._isDbClosingError(error)) {
                 return [];
             }
             throw error;
         }
+        if (typeof file === 'string') {
+            chunks = chunks.filter((chunk) => chunk.file === file);
+        }
+        return chunks;
     }
     
-    async deleteModelChunks(modelName) {
-        const chunks = await this.getModelChunks(modelName);
+    async deleteModelChunks(modelName, file) {
+        const chunks = await this.getModelChunks(modelName, file);
         for (const chunk of chunks) {
             await this.delete('modelChunks', chunk.id);
         }
     }
+
+    async getModelManifest(modelName) {
+        return (await this.getSetting(`model_manifest_${modelName}`)) || null;
+    }
+
+    async setModelManifest(modelName, manifest) {
+        return this.setSetting(`model_manifest_${modelName}`, manifest);
+    }
+
+    async deleteModel(modelName) {
+        await this.deleteModelChunks(modelName);
+        await this.setModelManifest(modelName, null);
+    }
     
     async isModelDownloaded(modelName) {
-        const chunks = await this.getModelChunks(modelName);
-        return chunks.length > 0;
+        const manifest = await this.getModelManifest(modelName);
+        if (!manifest?.files?.length) return false;
+        for (const file of manifest.files) {
+            const chunks = await this.getModelChunks(modelName, file.path);
+            if (chunks.length !== file.totalChunks) {
+                return false;
+            }
+        }
+        return true;
     }
 }

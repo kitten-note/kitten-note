@@ -18,8 +18,13 @@
 
 /**
  * KittenNote - Sync Manager
- * P2P sync using WebRTC with QR code signaling (no server required)
+ * P2P sync using WebRTC with QR code signaling (no server required),
+ * with application-layer E2E encryption (see js/crypto.js) and
+ * tombstone-based delete propagation.
  */
+
+import { SyncCrypto, buildHandshakeBinding, randomNonce } from './crypto.js';
+import { isPlainObject, clampString, safeIsoDate } from './utils.js';
 
 const SYNC_PROGRESS_TICKER_INTERVAL = 250;
 
@@ -29,7 +34,12 @@ export class SyncManager {
         this.app = app;
         
         this.deviceId = null;
-        this.keyPair = null;
+        this.identity = null;    // persisted { id, sign, ecdh } base64 record
+        this.signKeyPair = null; // CryptoKey pair for handshake signatures
+        this.ecdhKeyPair = null; // CryptoKey pair for key agreement
+        this.keyPair = null;     // legacy alias (sign pair)
+        this.sessionKey = null;  // AES-GCM key once the handshake completes
+        this.pendingHandshake = null;
         this.peers = new Map();
         this.isInitialized = false;
         this.wizardReady = false;
@@ -69,88 +79,41 @@ export class SyncManager {
         }
     }
     
-    async initializeDevice() {
-        let deviceInfo = await this.db.getSetting('deviceInfo');
-        
-        if (!deviceInfo) {
-            this.deviceId = this.generateDeviceId();
-            this.keyPair = await this.generateKeyPair();
-            
-            deviceInfo = {
-                id: this.deviceId,
-                publicKey: await this.exportPublicKey(this.keyPair.publicKey),
-                privateKey: await this.exportPrivateKey(this.keyPair.privateKey),
-                createdAt: new Date().toISOString()
-            };
-            
-            await this.db.setSetting('deviceInfo', deviceInfo);
-        } else {
-            this.deviceId = deviceInfo.id;
-            this.keyPair = {
-                publicKey: await this.importPublicKey(deviceInfo.publicKey),
-                privateKey: await this.importPrivateKey(deviceInfo.privateKey)
-            };
+    async _ensureIdentity() {
+        if (!this.identity) {
+            await this.initializeDevice();
         }
     }
-    
+
+    async initializeDevice() {
+        let identity = await this.db.getSetting('deviceIdentity');
+
+        if (!identity?.sign || !identity?.ecdh) {
+            // Migrate the legacy ECDSA-only record (its key pair becomes the
+            // signing pair) or create a fresh identity.
+            const legacy = await this.db.getSetting('deviceInfo');
+            const generated = await SyncCrypto.generateIdentity();
+            identity = {
+                id: legacy?.id || this.generateDeviceId(),
+                sign: await SyncCrypto.exportPair(generated.sign),
+                ecdh: await SyncCrypto.exportPair(generated.ecdh),
+                createdAt: legacy?.createdAt || new Date().toISOString()
+            };
+            await this.db.setSetting('deviceIdentity', identity);
+            await this.db.setSetting('deviceInfo', null);
+        }
+
+        this.deviceId = identity.id;
+        this.identity = identity;
+        this.signKeyPair = await SyncCrypto.importSignPair(identity.sign);
+        this.ecdhKeyPair = await SyncCrypto.importEcdhPair(identity.ecdh);
+        this.keyPair = this.signKeyPair; // backward-compat alias
+    }
+
     generateDeviceId() {
         const array = new Uint8Array(16);
         crypto.getRandomValues(array);
         return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
-    }
-    
-    async generateKeyPair() {
-        return await crypto.subtle.generateKey(
-            { name: 'ECDSA', namedCurve: 'P-256' },
-            true,
-            ['sign', 'verify']
-        );
-    }
-    
-    async exportPublicKey(key) {
-        const exported = await crypto.subtle.exportKey('spki', key);
-        return this.arrayBufferToBase64(exported);
-    }
-    
-    async exportPrivateKey(key) {
-        const exported = await crypto.subtle.exportKey('pkcs8', key);
-        return this.arrayBufferToBase64(exported);
-    }
-    
-    async importPublicKey(base64) {
-        const buffer = this.base64ToArrayBuffer(base64);
-        return await crypto.subtle.importKey(
-            'spki', buffer,
-            { name: 'ECDSA', namedCurve: 'P-256' },
-            true, ['verify']
-        );
-    }
-    
-    async importPrivateKey(base64) {
-        const buffer = this.base64ToArrayBuffer(base64);
-        return await crypto.subtle.importKey(
-            'pkcs8', buffer,
-            { name: 'ECDSA', namedCurve: 'P-256' },
-            true, ['sign']
-        );
-    }
-    
-    arrayBufferToBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-    }
-    
-    base64ToArrayBuffer(base64) {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes.buffer;
     }
     
     // ======== QR Code Libraries ========
@@ -642,13 +605,27 @@ export class SyncManager {
             // Wait for ICE gathering to complete
             await this.waitForICEGathering(this.currentPeerConnection);
             
-            // Package offer with candidates
+            await this._ensureIdentity();
+
+            // Package offer with candidates + crypto handshake material
+            const offerNonce = randomNonce(16);
             const offerData = {
                 type: 'offer',
                 sdp: this.currentPeerConnection.localDescription.sdp,
-                candidates: candidates
+                candidates: candidates,
+                v: 2,
+                deviceId: this.deviceId,
+                signPub: this.identity.sign.publicKey,
+                ecdhPub: this.identity.ecdh.publicKey,
+                nonce: offerNonce
             };
-            
+            offerData.sig = await SyncCrypto.sign(
+                this.signKeyPair.privateKey,
+                buildHandshakeBinding('offer', offerData.sdp, offerData.candidates)
+            );
+            this.sessionKey = null;
+            this.pendingHandshake = { role: 'initiator', offerNonce };
+
             const offerString = JSON.stringify(offerData);
             
             // Generate QR code
@@ -848,6 +825,12 @@ export class SyncManager {
             if (offerData.type !== 'offer') {
                 throw new Error('无效的连接信息');
             }
+
+            await this._ensureIdentity();
+            const offerVerification = await this._verifyHandshake('offer', offerData);
+            if (offerVerification === 'invalid') {
+                throw new Error('握手签名校验失败：连接信息可能被篡改，已中止配对');
+            }
             
             // Create peer connection
             this.currentPeerConnection = new RTCPeerConnection({
@@ -899,12 +882,34 @@ export class SyncManager {
             // Wait for ICE gathering
             await this.waitForICEGathering(this.currentPeerConnection);
             
-            // Package answer
+            // Package answer with crypto handshake material
+            const answerNonce = randomNonce(16);
             const answerData = {
                 type: 'answer',
                 sdp: this.currentPeerConnection.localDescription.sdp,
-                candidates: candidates
+                candidates: candidates,
+                v: 2,
+                deviceId: this.deviceId,
+                signPub: this.identity.sign.publicKey,
+                ecdhPub: this.identity.ecdh.publicKey,
+                nonce: answerNonce
             };
+            answerData.sig = await SyncCrypto.sign(
+                this.signKeyPair.privateKey,
+                buildHandshakeBinding('answer', answerData.sdp, answerData.candidates)
+            );
+
+            if (offerVerification === 'verified' && offerData.ecdhPub) {
+                this.sessionKey = await SyncCrypto.deriveSessionKey(
+                    this.ecdhKeyPair.privateKey,
+                    offerData.ecdhPub,
+                    `${offerData.nonce}|${answerNonce}`
+                );
+                this.pendingHandshake = null;
+            } else {
+                this.sessionKey = null;
+                this._warnLegacyPeer();
+            }
             
             const answerString = JSON.stringify(answerData);
             
@@ -967,6 +972,23 @@ export class SyncManager {
                 throw new Error('无效的应答数据');
             }
 
+            const answerVerification = await this._verifyHandshake('answer', answerData);
+            if (answerVerification === 'invalid') {
+                throw new Error('应答签名校验失败：连接信息可能被篡改，已中止配对');
+            }
+
+            if (answerVerification === 'verified' && answerData.ecdhPub && this.pendingHandshake?.offerNonce) {
+                await this._ensureIdentity();
+                this.sessionKey = await SyncCrypto.deriveSessionKey(
+                    this.ecdhKeyPair.privateKey,
+                    answerData.ecdhPub,
+                    `${this.pendingHandshake.offerNonce}|${answerData.nonce}`
+                );
+                this.pendingHandshake = null;
+            } else if (!this.sessionKey) {
+                this._warnLegacyPeer();
+            }
+
             await this.currentPeerConnection.setRemoteDescription({
                 type: 'answer',
                 sdp: answerData.sdp
@@ -990,6 +1012,33 @@ export class SyncManager {
         }
     }
     
+    /**
+     * Inspect a QR handshake payload:
+     *  - 'verified' – signatures present and valid (E2E will be enabled)
+     *  - 'legacy'   – no crypto material (older peer, DTLS only)
+     *  - 'invalid'  – crypto material present but the signature is bad
+     */
+    async _verifyHandshake(type, data) {
+        if (!data?.sig || !data?.ecdhPub || !data?.signPub || !data?.nonce) {
+            return 'legacy';
+        }
+        try {
+            const publicKey = await SyncCrypto.importSignPublicKey(data.signPub);
+            const binding = buildHandshakeBinding(type, data.sdp, data.candidates);
+            const ok = await SyncCrypto.verify(publicKey, data.sig, binding);
+            return ok ? 'verified' : 'invalid';
+        } catch (error) {
+            console.warn('[Sync] Handshake verification error:', error);
+            return 'invalid';
+        }
+    }
+
+    _warnLegacyPeer() {
+        console.warn('[Sync] Peer does not support E2E encryption (legacy version).');
+        this.app.Toast?.show('对方版本较旧：本次同步未启用端到端加密，建议升级后重连', 'warning', 5000);
+        this.app.logger?.warn('a legacy peer connected without E2E encryption.');
+    }
+
     // ======== Connection Utilities ========
     waitForICEGathering(pc, timeoutMs = 5000) {
         return new Promise((resolve, reject) => {
@@ -1118,6 +1167,8 @@ export class SyncManager {
         this.sendQueue = [];
         this.channelReady = false;
         this.syncInProgress = false;
+        this.sessionKey = null;
+        this.pendingHandshake = null;
         this.stopSyncProgressTicker();
     }
     
@@ -1252,6 +1303,12 @@ export class SyncManager {
     // ======== Sync Protocol ========
     async handleSyncMessage(data) {
         try {
+            if (SyncCrypto.isEnvelope(data)) {
+                if (!this.sessionKey) {
+                    throw new Error('收到加密消息，但当前连接没有会话密钥');
+                }
+                data = await SyncCrypto.decryptString(this.sessionKey, data);
+            }
             const message = JSON.parse(data);
             
             switch (message.type) {
@@ -1265,7 +1322,7 @@ export class SyncManager {
                     console.log('Sync acknowledged by peer');
                     this.updateSyncProgress(55, '正在合并对方数据...');
                     // Bidirectional: sync_ack may include peer's data
-                    if (message.notes || message.notebooks || message.folders) {
+                    if (message.notes || message.notebooks || message.folders || message.tombstones) {
                         const counts = await this.mergeRemoteData(message, (current, total) => {
                             const ratio = total > 0 ? (current / total) : 1;
                             const pct = 55 + Math.round(ratio * 40);
@@ -1318,36 +1375,40 @@ export class SyncManager {
             const peerManifest = message.manifest || { notes: {}, notebooks: {}, folders: {} };
 
             // Load local data (raw IDB for structure, full notes only where needed)
-            const [rawNotes, notebooks, folders] = await Promise.all([
+            const [rawNotes, notebooks, folders, tombstones] = await Promise.all([
                 this.db.getAll('notes'),
                 this.db.getAllNotebooks(),
-                this.db.getAllFolders()
+                this.db.getAllFolders(),
+                this.db.getAllTombstones()
             ]);
 
             // Compute what the peer is missing or has stale versions of
-            const foldersToSend   = this.getItemsNeededByPeer(folders,   peerManifest.folders);
-            const notebooksToSend = this.getItemsNeededByPeer(notebooks, peerManifest.notebooks);
-            const staleNoteIds    = this.getItemsNeededByPeer(rawNotes,  peerManifest.notes).map(n => n.id);
+            const foldersToSend    = this.getItemsNeededByPeer(folders,    peerManifest.folders);
+            const notebooksToSend  = this.getItemsNeededByPeer(notebooks,  peerManifest.notebooks);
+            const tombstonesToSend = this.getItemsNeededByPeer(tombstones, peerManifest.tombstones || {}, 'deletedAt');
+            const staleNoteIds     = this.getItemsNeededByPeer(rawNotes,  peerManifest.notes).map(n => n.id);
 
             // Fetch full content only for the notes that actually need to be sent
             const notesToSend = await this.getNotesByIds(staleNoteIds);
 
             // Build local manifest so the peer can compute what to send back
             const localManifest = {
-                notes:     Object.fromEntries(rawNotes.map(n => [n.id, n.updatedAt])),
-                notebooks: Object.fromEntries(notebooks.map(n => [n.id, n.updatedAt])),
-                folders:   Object.fromEntries(folders.map(f => [f.id, f.updatedAt]))
+                notes:      Object.fromEntries(rawNotes.map(n => [n.id, n.updatedAt])),
+                notebooks:  Object.fromEntries(notebooks.map(n => [n.id, n.updatedAt])),
+                folders:    Object.fromEntries(folders.map(f => [f.id, f.updatedAt])),
+                tombstones: Object.fromEntries(tombstones.map(t => [t.id, t.deletedAt]))
             };
             
             this.updateSyncProgress(40, `正在发送数据 (${notesToSend.length} 笔记, ${notebooksToSend.length} 笔记本, ${foldersToSend.length} 文件夹)...`);
             
             await this.sendMessage({
                 type: 'sync_data',
-                notes:     notesToSend,
-                notebooks: notebooksToSend,
-                folders:   foldersToSend,
-                manifest:  localManifest,
-                timestamp: new Date().toISOString()
+                notes:      notesToSend,
+                notebooks:  notebooksToSend,
+                folders:    foldersToSend,
+                tombstones: tombstonesToSend,
+                manifest:   localManifest,
+                timestamp:  new Date().toISOString()
             });
 
             this.updateSyncProgress(60, '数据已发送，等待确认...');
@@ -1376,23 +1437,26 @@ export class SyncManager {
             if (this.isChannelOpen()) {
                 const peerManifest = message.manifest || { notes: {}, notebooks: {}, folders: {} };
 
-                const [rawNotes, localNotebooks, localFolders] = await Promise.all([
+                const [rawNotes, localNotebooks, localFolders, localTombstones] = await Promise.all([
                     this.db.getAll('notes'),
                     this.db.getAllNotebooks(),
-                    this.db.getAllFolders()
+                    this.db.getAllFolders(),
+                    this.db.getAllTombstones()
                 ]);
 
-                const foldersToSend   = this.getItemsNeededByPeer(localFolders,   peerManifest.folders);
-                const notebooksToSend = this.getItemsNeededByPeer(localNotebooks, peerManifest.notebooks);
-                const staleNoteIds    = this.getItemsNeededByPeer(rawNotes,       peerManifest.notes).map(n => n.id);
-                const notesToSend     = await this.getNotesByIds(staleNoteIds);
+                const foldersToSend    = this.getItemsNeededByPeer(localFolders,    peerManifest.folders);
+                const notebooksToSend  = this.getItemsNeededByPeer(localNotebooks,  peerManifest.notebooks);
+                const tombstonesToSend = this.getItemsNeededByPeer(localTombstones, peerManifest.tombstones || {}, 'deletedAt');
+                const staleNoteIds     = this.getItemsNeededByPeer(rawNotes,        peerManifest.notes).map(n => n.id);
+                const notesToSend      = await this.getNotesByIds(staleNoteIds);
                 
                 await this.sendMessage({
                     type: 'sync_ack',
-                    notes:     notesToSend,
-                    notebooks: notebooksToSend,
-                    folders:   foldersToSend,
-                    timestamp: new Date().toISOString()
+                    notes:      notesToSend,
+                    notebooks:  notebooksToSend,
+                    folders:    foldersToSend,
+                    tombstones: tombstonesToSend,
+                    timestamp:  new Date().toISOString()
                 });
                 
                 this.updateSyncProgress(100, `同步完成：${mergedCount.folders} 文件夹, ${mergedCount.notebooks} 笔记本, ${mergedCount.notes} 笔记`);
@@ -1421,69 +1485,231 @@ export class SyncManager {
     }
     
     /**
-     * Merge remote data (folders, notebooks, notes) into local DB.
+     * Merge remote data (folders, notebooks, notes, tombstones) into the local
+     * DB. Entities are validated against a field whitelist before they are
+     * written, tombstones are applied first so deletions beat stale data, and
+     * conflicts resolve last-write-wins on `updatedAt` / `deletedAt`.
      * Returns counts of merged items.
      */
     async mergeRemoteData(message, onProgress) {
-        const { notes, notebooks, folders } = message;
-        let mergedCount = { notes: 0, notebooks: 0, folders: 0 };
-        const totalItems = (folders?.length || 0) + (notebooks?.length || 0) + (notes?.length || 0);
+        const notes = Array.isArray(message.notes) ? message.notes : [];
+        const notebooks = Array.isArray(message.notebooks) ? message.notebooks : [];
+        const folders = Array.isArray(message.folders) ? message.folders : [];
+        const tombstones = Array.isArray(message.tombstones) ? message.tombstones : [];
+
+        const mergedCount = { notes: 0, notebooks: 0, folders: 0, deleted: 0, skipped: 0, unchanged: 0 };
+        const totalItems = folders.length + notebooks.length + notes.length + tombstones.length;
         let processedItems = 0;
         const tick = () => onProgress?.(processedItems, totalItems);
-        
-        // Merge folders first (parents before children)
-        if (folders && folders.length > 0) {
-            for (const folder of folders) {
-                try {
-                    const local = await this.db.getFolder(folder.id);
-                    if (!local || new Date(folder.updatedAt) > new Date(local.updatedAt)) {
-                        await this.db.upsertFolder(folder);
-                        mergedCount.folders++;
-                    }
-                } catch (e) {
-                    console.warn('Failed to merge folder:', folder.id, e);
-                }
-                processedItems++;
+
+        // 1) Apply remote tombstones first so deletions beat stale copies.
+        for (const rawTombstone of tombstones) {
+            processedItems++;
+            const tombstone = this._sanitizeTombstone(rawTombstone);
+            if (!tombstone) {
+                mergedCount.skipped++;
                 tick();
+                continue;
             }
-        }
-        
-        // Merge notebooks
-        if (notebooks && notebooks.length > 0) {
-            for (const notebook of notebooks) {
-                try {
-                    const local = await this.db.getNotebook(notebook.id);
-                    if (!local || new Date(notebook.updatedAt) > new Date(local.updatedAt)) {
-                        await this.db.upsertNotebook(notebook);
-                        mergedCount.notebooks++;
+            try {
+                const local = await this._getLocalEntity(tombstone.type, tombstone.entityId);
+                const deletedDate = new Date(tombstone.deletedAt);
+
+                if (!local) {
+                    await this.db.upsertTombstone(tombstone);
+                } else {
+                    const localDate = new Date(local.updatedAt);
+                    if (!Number.isNaN(localDate.getTime()) && localDate >= deletedDate) {
+                        // Local copy is newer than the remote deletion — keep it.
+                        mergedCount.unchanged++;
+                    } else {
+                        await this._deleteLocalEntity(tombstone.type, tombstone.entityId, { recordTombstone: false });
+                        await this.db.upsertTombstone(tombstone);
+                        mergedCount.deleted++;
                     }
-                } catch (e) {
-                    console.warn('Failed to merge notebook:', notebook.id, e);
                 }
-                processedItems++;
-                tick();
+            } catch (e) {
+                console.warn('Failed to apply tombstone:', tombstone, e);
+                mergedCount.skipped++;
             }
+            tick();
         }
-        
-        // Merge notes
-        if (notes && notes.length > 0) {
-            for (const note of notes) {
-                try {
-                    const local = await this.db.getNote(note.id);
-                    if (!local || new Date(note.updatedAt) > new Date(local.updatedAt)) {
-                        await this.db.upsertNote(note);
-                        mergedCount.notes++;
-                    }
-                } catch (e) {
-                    console.warn('Failed to merge note:', note.id, e);
+
+        // 2) Merge live entities (parents before children), guarded by LWW and
+        //    by any tombstone that is newer than the incoming copy.
+        const mergeEntity = async (type, item, sanitize, upsert, getLocal) => {
+            const clean = sanitize(item);
+            if (!clean) return 'skipped';
+
+            const [local, tombstone] = await Promise.all([
+                getLocal(clean.id),
+                this.db.getTombstone(type, clean.id)
+            ]);
+
+            const remoteDate = new Date(clean.updatedAt);
+            const remoteValid = !Number.isNaN(remoteDate.getTime());
+
+            if (tombstone) {
+                const deletedDate = new Date(tombstone.deletedAt);
+                if (!remoteValid || remoteDate < deletedDate) {
+                    return 'skipped'; // do not resurrect a deleted item
                 }
-                processedItems++;
-                tick();
+                await this.db.deleteTombstone(type, clean.id);
             }
+
+            if (local) {
+                const localDate = new Date(local.updatedAt);
+                if (!remoteValid || (!Number.isNaN(localDate.getTime()) && localDate >= remoteDate)) {
+                    return 'unchanged';
+                }
+            }
+
+            await upsert(clean);
+            return 'merged';
+        };
+
+        for (const folder of folders) {
+            try {
+                const outcome = await mergeEntity(
+                    'folder', folder,
+                    (f) => this._sanitizeFolder(f),
+                    (f) => this.db.upsertFolder(f),
+                    (id) => this.db.getFolder(id)
+                );
+                if (outcome === 'merged') mergedCount.folders++;
+            } catch (e) {
+                console.warn('Failed to merge folder:', folder?.id, e);
+                mergedCount.skipped++;
+            }
+            processedItems++;
+            tick();
         }
-        
-        console.log(`Sync merge: ${mergedCount.folders} folders, ${mergedCount.notebooks} notebooks, ${mergedCount.notes} notes`);
+
+        for (const notebook of notebooks) {
+            try {
+                const outcome = await mergeEntity(
+                    'notebook', notebook,
+                    (n) => this._sanitizeNotebook(n),
+                    (n) => this.db.upsertNotebook(n),
+                    (id) => this.db.getNotebook(id)
+                );
+                if (outcome === 'merged') mergedCount.notebooks++;
+            } catch (e) {
+                console.warn('Failed to merge notebook:', notebook?.id, e);
+                mergedCount.skipped++;
+            }
+            processedItems++;
+            tick();
+        }
+
+        for (const note of notes) {
+            try {
+                const outcome = await mergeEntity(
+                    'note', note,
+                    (n) => this._sanitizeNote(n),
+                    (n) => this.db.upsertNote(n),
+                    (id) => this.db.get('notes', id) // raw record: no OPFS content read
+                );
+                if (outcome === 'merged') mergedCount.notes++;
+            } catch (e) {
+                console.warn('Failed to merge note:', note?.id, e);
+                mergedCount.skipped++;
+            }
+            processedItems++;
+            tick();
+        }
+
+        console.log(`Sync merge: ${mergedCount.folders} folders, ${mergedCount.notebooks} notebooks, ${mergedCount.notes} notes, ${mergedCount.deleted} deletions, ${mergedCount.skipped} skipped`);
         return mergedCount;
+    }
+
+    // ======== Remote payload sanitizers ========
+
+    _sanitizeTombstone(raw) {
+        if (!isPlainObject(raw)) return null;
+        if (!['folder', 'notebook', 'note'].includes(raw.type)) return null;
+        const entityId = clampString(raw.entityId, 128);
+        if (!entityId) return null;
+        return { type: raw.type, entityId, deletedAt: safeIsoDate(raw.deletedAt) };
+    }
+
+    _sanitizeFolder(raw) {
+        if (!isPlainObject(raw)) return null;
+        const id = clampString(raw.id, 128);
+        if (!id) return null;
+        return {
+            id,
+            name: clampString(raw.name, 200, '未命名文件夹'),
+            parentId: typeof raw.parentId === 'string' ? clampString(raw.parentId, 128) : null,
+            order: Number.isFinite(raw.order) ? raw.order : Date.now(),
+            createdAt: safeIsoDate(raw.createdAt),
+            updatedAt: safeIsoDate(raw.updatedAt)
+        };
+    }
+
+    _sanitizeNotebook(raw) {
+        if (!isPlainObject(raw)) return null;
+        const id = clampString(raw.id, 128);
+        if (!id) return null;
+
+        const patterns = ['blank', 'lines', 'grid', 'dots', 'calligraphy', 'staff'];
+        const style = isPlainObject(raw.pageStyle) ? raw.pageStyle : {};
+        const color = typeof style.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(style.color)
+            ? style.color
+            : '#ffffff';
+
+        return {
+            id,
+            name: clampString(raw.name, 200, '未命名笔记本'),
+            folderId: typeof raw.folderId === 'string' ? clampString(raw.folderId, 128) : null,
+            order: Number.isFinite(raw.order) ? raw.order : Date.now(),
+            pageStyle: {
+                pattern: patterns.includes(style.pattern) ? style.pattern : 'blank',
+                color
+            },
+            createdAt: safeIsoDate(raw.createdAt),
+            updatedAt: safeIsoDate(raw.updatedAt)
+        };
+    }
+
+    _sanitizeNote(raw) {
+        if (!isPlainObject(raw)) return null;
+        const id = clampString(raw.id, 128);
+        if (!id) return null;
+
+        const type = raw.type === 'ink' ? 'ink' : 'text';
+        let content = raw.content;
+        if (type === 'text') {
+            content = typeof content === 'string' ? content : '';
+        } else {
+            content = isPlainObject(content) && Array.isArray(content.strokes)
+                ? content
+                : { version: 2, strokes: [], images: [] };
+        }
+
+        return {
+            id,
+            title: clampString(raw.title, 300, '未命名笔记'),
+            type,
+            content,
+            notebookId: typeof raw.notebookId === 'string' ? clampString(raw.notebookId, 128) : null,
+            order: Number.isFinite(raw.order) ? raw.order : Date.now(),
+            createdAt: safeIsoDate(raw.createdAt),
+            updatedAt: safeIsoDate(raw.updatedAt)
+        };
+    }
+
+    async _getLocalEntity(type, entityId) {
+        if (type === 'folder') return this.db.getFolder(entityId);
+        if (type === 'notebook') return this.db.getNotebook(entityId);
+        if (type === 'note') return this.db.get('notes', entityId);
+        return null;
+    }
+
+    async _deleteLocalEntity(type, entityId, options = {}) {
+        if (type === 'folder') return this.db.deleteFolder(entityId, options);
+        if (type === 'notebook') return this.db.deleteNotebook(entityId, options);
+        if (type === 'note') return this.db.deleteNote(entityId, options);
     }
 
     // ======== Delta-sync helpers ========
@@ -1494,15 +1720,17 @@ export class SyncManager {
      * Uses raw IDB reads so OPFS block data is never read unnecessarily.
      */
     async buildManifest() {
-        const [rawNotes, notebooks, folders] = await Promise.all([
+        const [rawNotes, notebooks, folders, tombstones] = await Promise.all([
             this.db.getAll('notes'),       // raw IDB records – no OPFS reads
             this.db.getAllNotebooks(),
-            this.db.getAllFolders()
+            this.db.getAllFolders(),
+            this.db.getAllTombstones()
         ]);
         return {
-            notes:     Object.fromEntries(rawNotes.map(n => [n.id, n.updatedAt])),
-            notebooks: Object.fromEntries(notebooks.map(n => [n.id, n.updatedAt])),
-            folders:   Object.fromEntries(folders.map(f => [f.id, f.updatedAt]))
+            notes:      Object.fromEntries(rawNotes.map(n => [n.id, n.updatedAt])),
+            notebooks:  Object.fromEntries(notebooks.map(n => [n.id, n.updatedAt])),
+            folders:    Object.fromEntries(folders.map(f => [f.id, f.updatedAt])),
+            tombstones: Object.fromEntries(tombstones.map(t => [t.id, t.deletedAt]))
         };
     }
 
@@ -1512,11 +1740,15 @@ export class SyncManager {
      * @param {Array}  localItems   – local records with at least {id, updatedAt}
      * @param {Object} peerManifest – peer's { id: updatedAt } map for this store
      */
-    getItemsNeededByPeer(localItems, peerManifest) {
+    getItemsNeededByPeer(localItems, peerManifest, dateField = 'updatedAt') {
         return localItems.filter(item => {
             const peerUpdatedAt = peerManifest?.[item.id];
             if (!peerUpdatedAt) return true; // peer doesn't have it
-            return new Date(item.updatedAt) > new Date(peerUpdatedAt);
+            const localDate = new Date(item[dateField]);
+            const peerDate = new Date(peerUpdatedAt);
+            if (Number.isNaN(localDate.getTime())) return false;
+            if (Number.isNaN(peerDate.getTime())) return true;
+            return localDate > peerDate;
         });
     }
 
@@ -1555,7 +1787,10 @@ export class SyncManager {
             throw new Error('数据通道未建立');
         }
 
-        const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        const plainData = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        const data = this.sessionKey
+            ? await SyncCrypto.encryptString(this.sessionKey, plainData)
+            : plainData;
 
         if (channel.readyState === 'open') {
             // WebRTC data channels can struggle with messages > 64KB
