@@ -1610,14 +1610,15 @@ export class InkEditor {
         this.renderUI();
     }
 
-    drawBackgroundToContext(ctx, width, height, scale, offset) {
+    drawBackgroundToContext(ctx, width, height, scale, offset, pageStyle = this.pageStyle) {
         ctx.clearRect(0, 0, width, height);
 
-        const color = this.pageStyle?.color || '#ffffff';
+        const style = pageStyle || this.pageStyle || {};
+        const color = style.color || '#ffffff';
         ctx.fillStyle = color;
         ctx.fillRect(0, 0, width, height);
 
-        const pattern = this.pageStyle?.pattern || 'blank';
+        const pattern = style.pattern || 'blank';
         if (pattern === 'blank') return;
 
         // Determine line color based on background brightness
@@ -2274,11 +2275,12 @@ export class InkEditor {
         return tempCanvas.toDataURL(`image/${format}`);
     }
     
-    getContentBounds() {
+    getContentBounds(content = this.content) {
         let minX = Infinity, minY = Infinity;
         let maxX = -Infinity, maxY = -Infinity;
+        const strokes = Array.isArray(content?.strokes) ? content.strokes : [];
         
-        this.content.strokes.forEach(stroke => {
+        strokes.forEach(stroke => {
             if (stroke.type === 'stroke') {
                 stroke.points.forEach(p => {
                     minX = Math.min(minX, p.x);
@@ -2304,6 +2306,72 @@ export class InkEditor {
             width: maxX - minX,
             height: maxY - minY
         };
+    }
+
+    /**
+     * Render an arbitrary ink note's content into a standalone canvas
+     * (used by PDF/PNG export, including notes that are not currently open).
+     */
+    async renderNoteContentToCanvas(note, { scale = 2, padding = 20, pageStyle = null } = {}) {
+        const content = note?.content || { version: 2, strokes: [], images: [] };
+        const strokes = Array.isArray(content.strokes) ? content.strokes : [];
+        const images = Array.isArray(content.images) ? content.images : [];
+
+        await this._preloadImagesFor(content);
+
+        const bounds = this.getContentBounds(content);
+        const width = Math.max(1, Math.ceil(bounds.width + padding * 2));
+        const height = Math.max(1, Math.ceil(bounds.height + padding * 2));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const ctx = canvas.getContext('2d');
+
+        const style = pageStyle || this.pageStyle || { pattern: 'blank', color: '#ffffff' };
+        const offset = { x: padding - bounds.x, y: padding - bounds.y };
+
+        ctx.save();
+        ctx.scale(scale, scale);
+        this.drawBackgroundToContext(ctx, width, height, 1, offset, style);
+        ctx.translate(offset.x, offset.y);
+        this._renderImagesInContentSpace(ctx, null, images);
+
+        // Never bake selection highlights into an export
+        const previouslySelected = this.selectedStrokes;
+        this.selectedStrokes = [];
+        try {
+            for (const stroke of strokes) {
+                this.renderStroke(ctx, stroke);
+            }
+        } finally {
+            this.selectedStrokes = previouslySelected;
+        }
+        ctx.restore();
+
+        return canvas;
+    }
+
+    async _preloadImagesFor(content) {
+        if (!content?.images?.length || !this.app?.db) return;
+        for (const imageObj of content.images) {
+            if (this._imageCache.has(imageObj.id)) continue;
+            if (!imageObj.blobId) continue;
+            try {
+                const blob = await this.app.db.getImageBlob(imageObj.blobId);
+                if (blob?.data) {
+                    const img = new Image();
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        img.src = blob.data;
+                    });
+                    this._imageCache.set(imageObj.id, img);
+                }
+            } catch (err) {
+                console.warn('Failed to preload image for export:', imageObj.id, err);
+            }
+        }
     }
 
     // ======== Image Support ========
@@ -2413,10 +2481,10 @@ export class InkEditor {
                  imageObj.y > viewport.y + viewport.h);
     }
 
-    _renderImagesInContentSpace(ctx, viewport = null) {
-        if (!this.content.images?.length) return;
+    _renderImagesInContentSpace(ctx, viewport = null, images = this.content.images) {
+        if (!images?.length) return;
 
-        for (const imageObj of this.content.images) {
+        for (const imageObj of images) {
             if (viewport && !this._isImageVisible(imageObj, viewport)) {
                 continue;
             }

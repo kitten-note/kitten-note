@@ -22,7 +22,8 @@
  */
 
 import { Toast } from './toast.js';
-import { escapeHtml } from './utils.js';
+import { buildPdfFromCanvases } from './pdf.js';
+import { renderTextNoteToCanvases } from './pdf-text.js';
 
 export class ExportManager {
     constructor(db, app) {
@@ -129,92 +130,43 @@ export class ExportManager {
     }
     
     async exportTextAsPDF(note) {
-        // Create printable HTML
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            Toast.show('请允许弹出窗口以导出PDF', 'warning');
-            return;
+        try {
+            const canvases = renderTextNoteToCanvases(note);
+            const blob = await buildPdfFromCanvases(canvases);
+            this.downloadBlob(blob, this.sanitizeFilename(note.title) + '.pdf');
+            Toast.show('已导出为 PDF', 'success');
+        } catch (error) {
+            console.error('Text PDF export failed:', error);
+            Toast.show('PDF 导出失败: ' + error.message, 'error');
         }
-        
-        const htmlContent = this.app.textEditor?.markdownToHtml(note.content) || '';
-        
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>${escapeHtml(note.title)}</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        line-height: 1.6;
-                        max-width: 800px;
-                        margin: 0 auto;
-                        padding: 40px;
-                    }
-                    h1 { font-size: 2em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
-                    h2 { font-size: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.2em; }
-                    code { background: #f5f5f5; padding: 0.2em 0.4em; border-radius: 3px; }
-                    pre { background: #f5f5f5; padding: 16px; border-radius: 6px; overflow-x: auto; }
-                    blockquote { border-left: 4px solid #ddd; margin: 0; padding-left: 1em; color: #666; }
-                </style>
-            </head>
-            <body>
-                <h1>${escapeHtml(note.title)}</h1>
-                ${htmlContent}
-            </body>
-            </html>
-        `);
-        
-        printWindow.document.close();
-        printWindow.focus();
-        
-        setTimeout(() => {
-            printWindow.print();
-        }, 500);
-        
-        Toast.show('请在打印对话框中选择"保存为PDF"', 'info');
     }
     
     async exportInkAsPDF(note) {
-        // For ink notes, we convert canvas to PDF
-        const dataUrl = this.app.inkEditor?.exportToDataURL('png');
-        if (!dataUrl) {
-            Toast.show('无法导出墨迹内容', 'error');
-            return;
+        try {
+            const canvas = await this.renderInkNoteToCanvas(note);
+            if (!canvas) {
+                Toast.show('无法导出墨迹内容', 'error');
+                return;
+            }
+            const blob = await buildPdfFromCanvases([canvas], { marginPt: 36 });
+            this.downloadBlob(blob, this.sanitizeFilename(note.title) + '.pdf');
+            Toast.show('已导出为 PDF', 'success');
+        } catch (error) {
+            console.error('Ink PDF export failed:', error);
+            Toast.show('PDF 导出失败: ' + error.message, 'error');
         }
-        
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            Toast.show('请允许弹出窗口以导出PDF', 'warning');
-            return;
-        }
-        
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>${escapeHtml(note.title)}</title>
-                <style>
-                    body { margin: 0; padding: 20px; }
-                    img { max-width: 100%; height: auto; }
-                    h1 { font-family: sans-serif; margin-bottom: 20px; }
-                </style>
-            </head>
-            <body>
-                <h1>${escapeHtml(note.title)}</h1>
-                <img src="${dataUrl}" alt="Ink Note">
-            </body>
-            </html>
-        `);
-        
-        printWindow.document.close();
-        printWindow.focus();
-        
-        setTimeout(() => {
-            printWindow.print();
-        }, 500);
-        
-        Toast.show('请在打印对话框中选择"保存为PDF"', 'info');
+    }
+
+    /**
+     * Render an ink note (open or not) to a standalone canvas at export scale.
+     */
+    async renderInkNoteToCanvas(note) {
+        if (!this.app.inkEditor) return null;
+        const notebook = note.notebookId ? await this.db.getNotebook(note.notebookId) : null;
+        return this.app.inkEditor.renderNoteContentToCanvas(note, {
+            pageStyle: notebook?.pageStyle || { pattern: 'blank', color: '#ffffff' },
+            scale: 2
+        });
     }
     
     async exportAsPNG(note) {
@@ -222,20 +174,26 @@ export class ExportManager {
             Toast.show('文字笔记不支持PNG导出', 'warning');
             return;
         }
-        
-        const dataUrl = this.app.inkEditor?.exportToDataURL('png');
-        if (!dataUrl) {
-            Toast.show('无法导出墨迹内容', 'error');
-            return;
+
+        try {
+            const canvas = await this.renderInkNoteToCanvas(note);
+            if (!canvas) {
+                Toast.show('无法导出墨迹内容', 'error');
+                return;
+            }
+
+            const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    (result) => (result ? resolve(result) : reject(new Error('toBlob failed'))),
+                    'image/png'
+                );
+            });
+            this.downloadBlob(blob, this.sanitizeFilename(note.title) + '.png');
+            Toast.show('已导出为PNG', 'success');
+        } catch (error) {
+            console.error('PNG export failed:', error);
+            Toast.show('PNG 导出失败: ' + error.message, 'error');
         }
-        
-        // Convert data URL to blob and download
-        const response = await fetch(dataUrl);
-        const blob = await response.blob();
-        const filename = this.sanitizeFilename(note.title) + '.png';
-        
-        this.downloadBlob(blob, filename);
-        Toast.show('已导出为PNG', 'success');
     }
     
     async exportNotebook(notebookId) {

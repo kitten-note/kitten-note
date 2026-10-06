@@ -66,7 +66,7 @@
 - **导出**
   - 文字笔记 → Markdown 文件
   - 墨迹笔记 → KTNT 原生格式（版本 2，含内联图片）
-  - 任意笔记 → PDF（通过浏览器打印对话框）
+  - 任意笔记 → 真正的 PDF 文件（内置生成器直接下载 `.pdf`：文字笔记 A4 多页排版、中文正常，墨迹笔记自适应铺满 A4，无需浏览器打印对话框）
   - 墨迹笔记 → PNG 图片（含背景样式）
   - 整个笔记本 / 文件夹 → ZIP 包（含 `notebook.json` / `folder.json` 元数据）
 
@@ -125,6 +125,8 @@ OPFS（可选，/kittennote/）
 | `js/directory-tree.js` | 目录树渲染、搜索、拖拽排序 |
 | `js/settings.js` | 设置界面、主题、备份、存储引擎管理 |
 | `js/export.js` | MD / KTNT / PDF / PNG / ZIP 导出 |
+| `js/pdf.js` | 零依赖 PDF 生成器（A4 多页、JPEG 图像页） |
+| `js/pdf-text.js` | 文字笔记 Markdown 排版与分页（中文换行/分页） |
 | `js/utils.js` | 通用工具函数 |
 | `js/toast.js` | 轻提示组件 |
 | `sw.js` | Service Worker 缓存与离线支持 |
@@ -219,7 +221,7 @@ npm test
 
 墨迹笔记：
   - 单页 → PNG（保留背景样式）
-  - 单页 → PDF
+  - 单页 → PDF（内置生成器直接下载）
   - 单页 → KTNT（原生格式）
 
 整个笔记本 / 文件夹：
@@ -261,7 +263,10 @@ kitten-note/
 │   ├── settings.js         # 设置管理
 │   ├── sync.js             # 同步系统
 │   ├── nes.js              # AI推理引擎
+│   ├── model-cache.js      # 模型分片缓存（IndexedDB）
 │   ├── export.js           # 导出处理
+│   ├── pdf.js              # PDF生成器
+│   ├── pdf-text.js         # 文字排版/分页
 │   └── toast.js            # 通知组件
 │
 ├── css/                    # 样式表
@@ -271,7 +276,9 @@ kitten-note/
 │   └── ink-editor.css      # 墨迹编辑器样式
 │
 ├── tests/                  # Node.js测试
-│   └── opfs-storage.test.js
+│   ├── opfs-storage.test.js
+│   ├── crypto.test.js
+│   └── pdf.test.js
 │
 ├── icons/                  # 应用图标
 │   └── *-*.png             # 各尺寸PNG
