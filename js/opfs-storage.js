@@ -39,6 +39,8 @@ const ROOT_DIR = 'kittennote';
 const NOTES_DIR = 'notes';
 const INDEX_FILE = '_index.json';
 const CHECKPOINT_FILE = '_checkpoint.json';
+const PRE_IMPORT_SNAPSHOT_FILE = '_pre_import_snapshot.json';
+const WRITE_LOCK_NAME = 'kittennote-opfs-write';
 
 export class OPFSBlockStorage {
     constructor() {
@@ -213,6 +215,17 @@ export class OPFSBlockStorage {
     // -------------------------------------------------------------------------
 
     /**
+     * Serialize all mutating operations across tabs with the Web Locks API.
+     * Falls back to running directly when locks are unavailable.
+     */
+    async _withWriteLock(fn) {
+        if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+            return navigator.locks.request(WRITE_LOCK_NAME, fn);
+        }
+        return fn();
+    }
+
+    /**
      * Write note content with incremental block updates.
      * Only changed blocks are rewritten.
      *
@@ -221,6 +234,10 @@ export class OPFSBlockStorage {
      * @returns {object} Write stats { blocksWritten, blocksUnchanged, blocksRemoved, totalBlocks }
      */
     async writeNoteContent(noteId, content) {
+        return this._withWriteLock(() => this._writeNoteContentUnlocked(noteId, content));
+    }
+
+    async _writeNoteContentUnlocked(noteId, content) {
         const encoder = new TextEncoder();
         const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
         const data = encoder.encode(contentStr);
@@ -346,6 +363,10 @@ export class OPFSBlockStorage {
      * @param {string} noteId - The note identifier
      */
     async deleteNoteContent(noteId) {
+        return this._withWriteLock(() => this._deleteNoteContentUnlocked(noteId));
+    }
+
+    async _deleteNoteContentUnlocked(noteId) {
         try {
             await this._notesDir.removeEntry(noteId, { recursive: true });
         } catch {
@@ -612,6 +633,10 @@ export class OPFSBlockStorage {
      * @param {Object} mirrorFiles - Map of { path: Uint8Array }
      */
     async importMirror(mirrorFiles, onProgress) {
+        return this._withWriteLock(() => this._importMirrorUnlocked(mirrorFiles, onProgress));
+    }
+
+    async _importMirrorUnlocked(mirrorFiles, onProgress) {
         const entries = Object.entries(mirrorFiles || {});
         const total = entries.length || 1;
         let processed = 0;
@@ -669,6 +694,10 @@ export class OPFSBlockStorage {
      * @returns {object} Stats { notesProcessed, blocksRemoved, orphanDirsRemoved, spaceSaved }
      */
     async defragment(onProgress) {
+        return this._withWriteLock(() => this._defragmentUnlocked(onProgress));
+    }
+
+    async _defragmentUnlocked(onProgress) {
         const stats = { notesProcessed: 0, blocksRemoved: 0, orphanDirsRemoved: 0, spaceSaved: 0 };
         const noteIds = Object.keys(this._masterIndex || {});
         const total = noteIds.length;
@@ -702,7 +731,7 @@ export class OPFSBlockStorage {
                 // Re-read and re-write content for compaction
                 const content = await this.readNoteContent(noteId);
                 if (content !== null) {
-                    const writeResult = await this.writeNoteContent(noteId, content);
+                    const writeResult = await this._writeNoteContentUnlocked(noteId, content);
                     if (writeResult.blocksRemoved > 0) {
                         stats.blocksRemoved += writeResult.blocksRemoved;
                     }
@@ -743,6 +772,10 @@ export class OPFSBlockStorage {
      * Remove all OPFS data (used when switching back to IndexedDB).
      */
     async clearAll() {
+        return this._withWriteLock(() => this._clearAllUnlocked());
+    }
+
+    async _clearAllUnlocked() {
         try {
             const opfsRoot = await navigator.storage.getDirectory();
             await opfsRoot.removeEntry(ROOT_DIR, { recursive: true });
@@ -752,6 +785,63 @@ export class OPFSBlockStorage {
         this._masterIndex = {};
         this._root = null;
         this._notesDir = null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Pre-import snapshots
+    // -------------------------------------------------------------------------
+
+    /**
+     * Persist a JSON snapshot (used before backup imports wipe the database).
+     */
+    async savePreImportSnapshot(payload) {
+        const record = { version: 1, savedAt: new Date().toISOString(), data: payload };
+        const text = JSON.stringify(record);
+        const fh = await this._root.getFileHandle(PRE_IMPORT_SNAPSHOT_FILE, { create: true });
+        const writable = await fh.createWritable();
+        await writable.write(text);
+        await writable.close();
+        return { savedAt: record.savedAt, size: text.length };
+    }
+
+    /**
+     * Metadata about the stored snapshot, or null when none exists.
+     */
+    async readPreImportSnapshotInfo() {
+        try {
+            const fh = await this._root.getFileHandle(PRE_IMPORT_SNAPSHOT_FILE, { create: false });
+            const file = await fh.getFile();
+            const text = await file.text();
+            const record = JSON.parse(text);
+            return {
+                savedAt: record.savedAt || null,
+                version: record.version || 1,
+                size: file.size
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Load the stored snapshot payload ({ version, savedAt, data }).
+     */
+    async loadPreImportSnapshot() {
+        try {
+            const fh = await this._root.getFileHandle(PRE_IMPORT_SNAPSHOT_FILE, { create: false });
+            const file = await fh.getFile();
+            return JSON.parse(await file.text());
+        } catch {
+            return null;
+        }
+    }
+
+    async clearPreImportSnapshot() {
+        try {
+            await this._root.removeEntry(PRE_IMPORT_SNAPSHOT_FILE);
+        } catch {
+            // No snapshot stored
+        }
     }
 
     /**

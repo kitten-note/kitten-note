@@ -23,6 +23,7 @@
 
 import { Toast } from './toast.js';
 import { OPFSBlockStorage } from './opfs-storage.js';
+import { escapeHtml } from './utils.js';
 
 const PARSE_YIELD_INTERVAL = 20;
 
@@ -140,6 +141,13 @@ export class SettingsManager {
                     this.settings.nesApiModel
                 );
             });
+        });
+        
+        // NES local model URL
+        const nesModelUrlInput = document.getElementById('nes-model-url');
+        nesModelUrlInput?.addEventListener('change', () => {
+            this.settings.nesModelUrl = nesModelUrlInput.value.trim();
+            this.saveSettings();
         });
         
         // Test API button
@@ -264,6 +272,9 @@ export class SettingsManager {
         if (nesApiUrl) nesApiUrl.value = this.settings.nesApiUrl || '';
         if (nesApiKey) nesApiKey.value = this.settings.nesApiKey || '';
         if (nesApiModel) nesApiModel.value = this.settings.nesApiModel || 'gpt-3.5-turbo';
+
+        const nesModelUrlInput = document.getElementById('nes-model-url');
+        if (nesModelUrlInput) nesModelUrlInput.value = this.settings.nesModelUrl || '';
         
         this.app.nesManager?.setApiConfig(
             this.settings.nesApiUrl || '',
@@ -451,6 +462,8 @@ export class SettingsManager {
         this.updateDeviceInfo();
         this.updateModelStatus();
         this.updateDeveloperInfo();
+        this.updateStorageInfo();
+        this.refreshPreImportSnapshotInfo();
     }
 
     setupSettingsTabsWheelScroll() {
@@ -506,7 +519,7 @@ export class SettingsManager {
                     <div class="paired-device">
                         <div class="device-name">
                             <i class="fas fa-mobile-alt"></i>
-                            <span>${device.name || '未知设备'}</span>
+                            <span>${escapeHtml(device.name || '未知设备')}</span>
                         </div>
                         <span class="device-status">上次同步: ${device.lastSync ? new Date(device.lastSync).toLocaleString() : '从未'}</span>
                     </div>
@@ -752,6 +765,85 @@ export class SettingsManager {
             e.target.value = value;
             this.saveSettings();
         });
+
+        // Pre-import snapshot restore
+        const restoreSnapshotBtn = document.getElementById('backup-restore-snapshot-btn');
+        restoreSnapshotBtn?.addEventListener('click', () => this.restorePreImportSnapshot());
+        this.refreshPreImportSnapshotInfo();
+    }
+
+    async refreshPreImportSnapshotInfo() {
+        const btn = document.getElementById('backup-restore-snapshot-btn');
+        const info = document.getElementById('backup-snapshot-info');
+        if (!btn && !info) return;
+
+        try {
+            const meta = await this.app.db.getPreImportSnapshotInfo();
+            if (meta?.savedAt) {
+                if (info) {
+                    info.textContent = `可用快照：${new Date(meta.savedAt).toLocaleString()}（${this.formatBytes(meta.size || 0)}）`;
+                }
+                if (btn) btn.disabled = false;
+            } else {
+                if (info) info.textContent = '暂无快照（首次导入备份前会自动生成）';
+                if (btn) btn.disabled = true;
+            }
+        } catch (error) {
+            console.warn('Failed to read snapshot info:', error);
+            if (info) info.textContent = '快照信息读取失败';
+        }
+    }
+
+    async restorePreImportSnapshot() {
+        if (!confirm('恢复导入前快照会覆盖当前数据，确定继续吗？')) return;
+
+        const btn = document.getElementById('backup-restore-snapshot-btn');
+        const info = document.getElementById('backup-snapshot-info');
+        try {
+            if (btn) btn.disabled = true;
+            if (info) info.textContent = '正在恢复...';
+
+            const result = await this.app.db.restorePreImportSnapshot((current, total, message) => {
+                const pct = Math.round((Math.min(current, total) / Math.max(total, 1)) * 100);
+                if (info) info.textContent = message || `正在恢复... ${pct}%`;
+            });
+
+            Toast.show('已恢复导入前快照，页面即将刷新', 'success');
+            this.app.logger?.info(`pre-import snapshot restored (saved at ${result?.savedAt}).`);
+            setTimeout(() => location.reload(), 1200);
+        } catch (error) {
+            console.error('Snapshot restore failed:', error);
+            Toast.show('快照恢复失败: ' + error.message, 'error');
+            if (info) info.textContent = '快照恢复失败';
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async updateStorageInfo() {
+        const quotaEl = document.getElementById('storage-quota-info');
+        const persistEl = document.getElementById('storage-persist-info');
+        if (!quotaEl && !persistEl) return;
+
+        try {
+            if (quotaEl) {
+                if (navigator.storage?.estimate) {
+                    const { usage = 0, quota = 0 } = await navigator.storage.estimate();
+                    quotaEl.textContent = `${this.formatBytes(usage)} / ${this.formatBytes(quota)}`;
+                } else {
+                    quotaEl.textContent = '当前浏览器不支持估算';
+                }
+            }
+            if (persistEl) {
+                const persisted = navigator.storage?.persisted
+                    ? await navigator.storage.persisted()
+                    : false;
+                persistEl.textContent = persisted
+                    ? '已授予（数据不会被自动清理）'
+                    : '未授予（浏览器可能在空间紧张时清理数据）';
+            }
+        } catch (error) {
+            console.warn('storage estimate failed:', error);
+        }
     }
 
     updateBackupLastLabel() {

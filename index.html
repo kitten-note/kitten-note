@@ -19,7 +19,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- 若第三方 AI/API 功能因 CSP 受限，可临时移除本行并反馈问题 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; connect-src 'self' https: http:; object-src 'none'; base-uri 'none'">
     <meta name="theme-color" content="#4CAF50">
     <meta name="description" content="KittenNote - 跨平台PWA笔记软件">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -517,6 +519,14 @@
                                 </div>
                                 <p id="backup-import-progress-text" class="setting-hint" style="margin-top: 4px;">准备导入...</p>
                             </div>
+                            <div class="setting-item" style="margin-top: 12px;">
+                                <p class="setting-hint">每次导入前，应用会自动保存一份当前数据的快照，误导入时可一键恢复。</p>
+                                <button id="backup-restore-snapshot-btn" class="btn btn-secondary" style="margin-top: 8px;" disabled>
+                                    <i class="fas fa-clock-rotate-left"></i>
+                                    恢复导入前快照
+                                </button>
+                                <p id="backup-snapshot-info" class="setting-hint" style="margin-top: 4px;">检查中...</p>
+                            </div>
                         </div>
                     </div>
                     <div class="setting-item">
@@ -547,6 +557,8 @@
                         <div class="backup-card">
                             <h5>当前存储引擎</h5>
                             <p>当前使用：<strong id="storage-current-engine">IndexedDB</strong></p>
+                            <p class="setting-hint">浏览器配额：<strong id="storage-quota-info">-</strong></p>
+                            <p class="setting-hint">持久化存储：<strong id="storage-persist-info">-</strong></p>
                             <div class="setting-item" style="margin-top: 12px;">
                                 <label>切换存储引擎</label>
                                 <select id="storage-engine-select" class="form-select">
@@ -744,6 +756,12 @@
                                     <span class="progress-text">0%</span>
                                 </div>
                             </div>
+                        </div>
+                        <div class="setting-item">
+                            <label>模型下载地址（可选）</label>
+                            <input type="text" id="nes-model-url" class="setting-input"
+                                   placeholder="./assets/nes-model/onnx/model_q4.onnx">
+                            <span class="setting-hint">模型权重不随应用分发。可填同源路径或自建地址（需允许 CORS）。</span>
                         </div>
                         <div class="setting-item">
                             <label>自定义模型</label>

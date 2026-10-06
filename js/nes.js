@@ -23,6 +23,7 @@
  */
 
 import { Toast } from './toast.js';
+import { ModelChunkCache, downloadModelFile } from './model-cache.js';
 
 export class NESManager {
     constructor(app) {
@@ -277,11 +278,14 @@ export class NESManager {
             env.allowRemoteModels = false;
             env.localModelPath = './assets';
             env.useBrowserCache = false;
+            // Serve downloaded model weights straight from IndexedDB chunks
+            env.useCustomCache = true;
+            env.customCache = new ModelChunkCache(this.app.db, this.modelId);
 
             if (env.backends?.onnx?.wasm) {
                 env.backends.onnx.wasm.wasmPaths = {
-                    mjs: '/assets/transformers.js/ort-wasm-simd-threaded.jsep.mjs',
-                    wasm: '/assets/transformers.js/ort-wasm-simd-threaded.jsep.wasm'
+                    mjs: './assets/transformers.js/ort-wasm-simd-threaded.jsep.mjs',
+                    wasm: './assets/transformers.js/ort-wasm-simd-threaded.jsep.wasm'
                 };
             }
 
@@ -673,50 +677,25 @@ export class NESManager {
         if (downloadBtn) downloadBtn.disabled = true;
         
         try {
-            // The model is already included in assets/nes-model/
-            // This simulates a download process for the UI
-            const modelUrl = './assets/nes-model/onnx/model_q4.onnx';
-            
-            const response = await fetch(modelUrl);
-            if (!response.ok) {
-                throw new Error('Model file not found');
-            }
-            
-            const contentLength = response.headers.get('content-length');
-            const total = contentLength ? parseInt(contentLength) : 0;
-            let loaded = 0;
-            
-            const reader = response.body?.getReader();
-            const chunks = [];
-            
-            while (reader) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                
-                chunks.push(value);
-                loaded += value.length;
-                
-                if (total > 0) {
-                    const percent = Math.round((loaded / total) * 100);
+            const modelUrl = this.app.settingsManager?.settings?.nesModelUrl
+                || './assets/nes-model/onnx/model_q4.onnx';
+
+            const formatMb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+
+            const result = await downloadModelFile({
+                db: this.app.db,
+                modelName: this.modelId,
+                url: modelUrl,
+                onProgress: ({ received, total, percent }) => {
                     if (progressFill) progressFill.style.width = `${percent}%`;
-                    if (progressText) progressText.textContent = `${percent}%`;
+                    if (progressText) {
+                        progressText.textContent = total > 0
+                            ? `${percent}% (${formatMb(received)}/${formatMb(total)} MB)`
+                            : `${formatMb(received)} MB`;
+                    }
                 }
-            }
-            
-            // Store model data in IndexedDB
-            const blob = new Blob(chunks);
-            const chunkSize = 1024 * 1024; // 1MB chunks
-            const totalChunks = Math.ceil(blob.size / chunkSize);
-            
-            for (let i = 0; i < totalChunks; i++) {
-                const start = i * chunkSize;
-                const end = Math.min(start + chunkSize, blob.size);
-                const chunkBlob = blob.slice(start, end);
-                const arrayBuffer = await chunkBlob.arrayBuffer();
-                
-                await this.app.db.saveModelChunk(this.modelId, i, arrayBuffer);
-            }
-            
+            });
+
             // Update UI
             if (progressBar) progressBar.classList.add('hidden');
             if (downloadBtn) {
@@ -728,6 +707,9 @@ export class NESManager {
                 statusEl.textContent = '已下载';
                 statusEl.style.color = 'var(--primary)';
             }
+
+            this.app.logger?.info(`NES model stored: ${result.totalChunks} chunks, ${formatMb(result.totalBytes)} MB.`);
+            this.app.settingsManager?.updateModelStatus?.();
             
             // Load model
             await this.loadModel();
@@ -740,8 +722,8 @@ export class NESManager {
                 downloadBtn.disabled = false;
                 downloadBtn.innerHTML = '<i class="fas fa-download"></i> 重试下载';
             }
-            
-            this.app.Toast?.show('模型下载失败', 'error');
+            this.app.logger?.warn('model download failed.', error);
+            this.app.Toast?.show('模型下载失败: ' + (error?.message || error), 'error');
         }
     }
 }

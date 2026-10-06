@@ -22,6 +22,7 @@
  */
 
 import { Toast } from './toast.js';
+import { escapeHtml } from './utils.js';
 
 export class ExportManager {
     constructor(db, app) {
@@ -141,7 +142,7 @@ export class ExportManager {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>${note.title}</title>
+                <title>${escapeHtml(note.title)}</title>
                 <style>
                     body {
                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -158,7 +159,7 @@ export class ExportManager {
                 </style>
             </head>
             <body>
-                <h1>${note.title}</h1>
+                <h1>${escapeHtml(note.title)}</h1>
                 ${htmlContent}
             </body>
             </html>
@@ -192,7 +193,7 @@ export class ExportManager {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>${note.title}</title>
+                <title>${escapeHtml(note.title)}</title>
                 <style>
                     body { margin: 0; padding: 20px; }
                     img { max-width: 100%; height: auto; }
@@ -200,7 +201,7 @@ export class ExportManager {
                 </style>
             </head>
             <body>
-                <h1>${note.title}</h1>
+                <h1>${escapeHtml(note.title)}</h1>
                 <img src="${dataUrl}" alt="Ink Note">
             </body>
             </html>

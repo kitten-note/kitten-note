@@ -49,10 +49,14 @@ export class Toast {
             info: 'fa-info-circle'
         };
         
-        toast.innerHTML = `
-            <i class="fas ${iconMap[type] || iconMap.info}"></i>
-            <span>${message}</span>
-        `;
+        const icon = document.createElement('i');
+        icon.className = `fas ${iconMap[type] || iconMap.info}`;
+
+        const text = document.createElement('span');
+        text.textContent = message;
+
+        toast.appendChild(icon);
+        toast.appendChild(text);
         
         container.appendChild(toast);
         

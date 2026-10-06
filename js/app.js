@@ -30,6 +30,7 @@ import { SyncManager } from './sync.js';
 import { NESManager } from './nes.js';
 import { ExportManager } from './export.js';
 import { Toast } from './toast.js';
+import { escapeHtml } from './utils.js';
 
 class DebugLogger {
     constructor(scope = 'KittenNote') {
@@ -227,6 +228,9 @@ class KittenNoteApp {
             this.db = new Database();
             await this.db.init();
             
+            // Ask the browser to keep our data even under storage pressure
+            await this.requestPersistentStorage();
+            
             // Initialize components
             this.directoryTree = new DirectoryTree(this.db, this);
             this.textEditor = new TextEditor(this);
@@ -267,6 +271,20 @@ class KittenNoteApp {
         } catch (error) {
             this.logger.error('initialization stumbled.', error);
             Toast.show('应用初始化失败', 'error');
+        }
+    }
+    
+    async requestPersistentStorage() {
+        try {
+            if (!navigator.storage?.persist) return;
+            const alreadyPersisted = navigator.storage.persisted
+                ? await navigator.storage.persisted()
+                : false;
+            if (alreadyPersisted) return;
+            const granted = await navigator.storage.persist();
+            this.logger.info(`persistent storage ${granted ? 'granted' : 'not granted'}.`);
+        } catch (error) {
+            console.warn('persist() failed:', error);
         }
     }
     
@@ -336,11 +354,22 @@ class KittenNoteApp {
         });
         
         dialog.querySelector('.btn-update-now')?.addEventListener('click', () => {
-            // Tell SW to skip waiting and activate
+            let reloaded = false;
+            const reloadOnce = () => {
+                if (reloaded) return;
+                reloaded = true;
+                window.location.reload();
+            };
+
             if (navigator.serviceWorker.controller) {
+                // Wait until the new worker actually controls the page, then reload.
+                navigator.serviceWorker.addEventListener('controllerchange', reloadOnce, { once: true });
                 navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+                // Safety net in case controllerchange never fires.
+                setTimeout(reloadOnce, 3000);
+            } else {
+                reloadOnce();
             }
-            window.location.reload();
         });
     }
 
@@ -1071,6 +1100,19 @@ class KittenNoteApp {
         } else if (action === 'new-ink') {
             this.createQuickNote('ink');
         }
+
+        // Web Share Target (manifest.json → share_target)
+        const shareTitle = params.get('share_title');
+        const shareText = params.get('share_text');
+        const shareUrl = params.get('share_url');
+        if (shareTitle || shareText || shareUrl) {
+            const body = [shareText, shareUrl].filter(Boolean).join('\n\n');
+            const title = (shareTitle || body.split('\n')[0] || '').trim().slice(0, 80);
+            this.createQuickNote('text', {
+                title: title || undefined,
+                content: body
+            });
+        }
     }
     
     async createNewFolder() {
@@ -1109,13 +1151,15 @@ class KittenNoteApp {
         }
     }
     
-    async createNoteInNotebook(notebookId, type, openNote = true) {
-        const title = type === 'text' ? '新建文字笔记' : '新建墨迹笔记';
+    async createNoteInNotebook(notebookId, type, openNote = true, options = {}) {
+        const title = options.title || (type === 'text' ? '新建文字笔记' : '新建墨迹笔记');
         try {
             const note = await this.db.createNote({
                 title,
                 type,
-                content: type === 'text' ? '' : { version: 2, strokes: [], images: [] },
+                content: options.content !== undefined
+                    ? options.content
+                    : (type === 'text' ? '' : { version: 2, strokes: [], images: [] }),
                 notebookId,
                 order: Date.now()
             });
@@ -1130,7 +1174,7 @@ class KittenNoteApp {
         }
     }
     
-    async createQuickNote(type) {
+    async createQuickNote(type, options = {}) {
         // Create default notebook if none exists
         let notebooks = await this.db.getAllNotebooks();
         let notebook;
@@ -1145,7 +1189,7 @@ class KittenNoteApp {
             notebook = notebooks[0];
         }
         
-        await this.createNoteInNotebook(notebook.id, type);
+        await this.createNoteInNotebook(notebook.id, type, true, options);
         await this.directoryTree.render();
     }
     
@@ -1188,7 +1232,7 @@ class KittenNoteApp {
                 item.className = 'import-file-item';
                 item.innerHTML = `
                     <i class="fas ${isZip ? 'fa-box-archive' : ((file.name.endsWith('.ktnt') || file.name.endsWith('.json')) ? 'fa-pen-fancy' : 'fa-file-alt')}"></i>
-                    <span class="file-name">${file.name}</span>
+                    <span class="file-name">${escapeHtml(file.name)}</span>
                     <button class="remove-file" data-idx="${idx}"><i class="fas fa-times"></i></button>
                 `;
                 fileList.appendChild(item);
