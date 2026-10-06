@@ -38,6 +38,8 @@ DISCOVERY_QUERIES = [
 ]
 
 TEXT_KEYS = ["text", "content", "sentence", "document", "completion", "zh", "paragraph", "output", "target"]
+PAIR_LEFT_KEYS = ["original", "wrong", "src", "source", "mistake", "original_text", "incorrect", "error"]
+PAIR_RIGHT_KEYS = ["correct", "right", "tgt", "target", "correction", "corrected", "correct_text", "fixed"]
 
 
 def _get_json(url: str, timeout: int = 30):
@@ -70,7 +72,7 @@ def dataset_files(repo: str) -> List[str]:
     return wanted
 
 
-def download(repo: str, filename: str, dest: Path, max_bytes: int = 400 * 1024 * 1024) -> int:
+def download(repo: str, filename: str, dest: Path, max_bytes: int = 1_000_000_000) -> int:
     dest.parent.mkdir(parents=True, exist_ok=True)
     url = HF_RESOLVE.format(repo=repo, path=urllib.parse.quote(filename))
     request = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -103,12 +105,13 @@ def iter_texts(path: Path) -> Iterator[str]:
                     if isinstance(value, str) and value.strip():
                         yield " ".join(value.split())
         elif suffix in (".jsonl", ".json"):
-            with path.open("r", encoding="utf-8", errors="replace") as handle:
-                if suffix == ".jsonl":
+            if suffix == ".jsonl":
+                with path.open("r", encoding="utf-8", errors="replace") as handle:
                     for line in handle:
                         yield from _json_texts(line)
-                else:
-                    yield from _json_texts(handle.read())
+            else:
+                raw = path.read_text(encoding="utf-8", errors="replace")
+                yield from _json_texts(raw)
         else:
             with path.open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
@@ -116,7 +119,60 @@ def iter_texts(path: Path) -> Iterator[str]:
                     if line:
                         yield line
     except Exception as error:  # noqa: BLE001
-        print(f"[sources] extract failed for {path.name}: {error}")
+        print(f"[sources] extract failed for {path.name}: {error}; deleting partial file")
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def iter_pairs(path: Path) -> Iterator[tuple[str, str]]:
+    """Yield (wrong, correct) pairs from spelling-correction style files."""
+    suffix = path.suffix.lower()
+
+    def from_dict(item: dict) -> Iterator[tuple[str, str]]:
+        left = next((item[key] for key in PAIR_LEFT_KEYS if isinstance(item.get(key), str) and item[key].strip()), None)
+        right = next((item[key] for key in PAIR_RIGHT_KEYS if isinstance(item.get(key), str) and item[key].strip()), None)
+        if left and right and left != right and len(left) >= 8:
+            yield (" ".join(left.split()), " ".join(right.split()))
+
+    try:
+        if suffix == ".parquet":
+            import pyarrow.parquet as pq
+
+            table = pq.read_table(path)
+            for row in table.to_pylist():
+                if isinstance(row, dict):
+                    yield from from_dict(row)
+        elif suffix == ".jsonl":
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        payload = json.loads(line)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if isinstance(payload, dict):
+                        yield from from_dict(payload)
+                    elif isinstance(payload, list):
+                        for item in payload:
+                            if isinstance(item, dict):
+                                yield from from_dict(item)
+        elif suffix == ".json":
+            raw = path.read_text(encoding="utf-8", errors="replace")
+            try:
+                payload = json.loads(raw)
+            except Exception as error:  # noqa: BLE001
+                print(f"[sources] json parse failed for {path.name}: {error}")
+                return
+            stack = [payload]
+            while stack:
+                item = stack.pop()
+                if isinstance(item, dict):
+                    yield from from_dict(item)
+                elif isinstance(item, list):
+                    stack.extend(item)
+    except Exception as error:  # noqa: BLE001
+        print(f"[sources] pair extract failed for {path.name}: {error}")
 
 
 def _json_texts(raw: str) -> Iterator[str]:
@@ -141,6 +197,7 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
     """Fetch bounded text from as many accessible datasets as possible."""
     EXTERNAL.mkdir(parents=True, exist_ok=True)
     consolidated = EXTERNAL / "all_text.txt"
+    pairs_path = EXTERNAL / "csc_pairs.jsonl"
     manifest_path = EXTERNAL / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {"datasets": []}
     done_repos = {entry["repo"] for entry in manifest["datasets"]}
@@ -156,7 +213,7 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
     total_chars = consolidated.stat().st_size if consolidated.exists() else 0
     print(f"[sources] starting collection: {len(queue)} candidates, budget {minutes:.0f} min / {max_total_chars/1e6:.0f}M chars")
 
-    with consolidated.open("a", encoding="utf-8") as out:
+    with consolidated.open("a", encoding="utf-8") as out, pairs_path.open("a", encoding="utf-8") as pairs_out:
         for repo in queue:
             if time.time() > deadline or total_chars >= max_total_chars:
                 break
@@ -167,6 +224,7 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
             if not files:
                 continue
             repo_chars = 0
+            repo_pairs = 0
             repo_dir = EXTERNAL / repo.replace("/", "__")
             used_files = []
             for filename in files:
@@ -189,14 +247,25 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
                     total_chars += len(text)
                     if repo_chars - before > per_dataset_chars or total_chars >= max_total_chars or time.time() > deadline:
                         break
+                # spelling-correction pairs (real edit streams)
+                for wrong, correct in iter_pairs(target):
+                    pairs_out.write(json.dumps({"wrong": wrong, "correct": correct}, ensure_ascii=False) + "\n")
+                    repo_pairs += 1
+                    if repo_pairs >= 200_000:
+                        break
+                if not target.exists():
+                    continue  # extract failed and deleted the partial file
                 used_files.append(filename)
                 if repo_chars - before > 0:
                     print(f"[sources] {repo}: +{(repo_chars - before)/1e6:.1f}M chars (total {total_chars/1e6:.1f}M)")
-            if repo_chars > 0:
+                if repo_pairs:
+                    print(f"[sources] {repo}: +{repo_pairs} correction pairs")
+            if repo_chars > 0 or repo_pairs > 0:
                 manifest["datasets"].append({
                     "repo": repo,
                     "files": used_files,
                     "chars": repo_chars,
+                    "pairs": repo_pairs,
                     "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                     "license": "see dataset card on huggingface.co/datasets/" + repo,
                 })

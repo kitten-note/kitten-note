@@ -40,37 +40,37 @@ def count_samples(paths: List[Path]) -> int:
 
 def batches(paths: List[Path], batch_size: int, rng: np.random.Generator,
             repeat: bool = True) -> Iterator[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """Yield shuffled batches of (ids_flat, offsets, labels)."""
-    epoch = 0
+    """Pool samples across shards into fixed-size batches (correct batch math)."""
+
+    def assemble(buffer_ids: List[np.ndarray], buffer_labels: List[int]):
+        flat = np.concatenate(buffer_ids).astype(np.int64)
+        lengths = np.array([len(item) for item in buffer_ids], dtype=np.int64)
+        offsets = np.zeros(len(buffer_ids), dtype=np.int64)
+        if len(buffer_ids) > 1:
+            np.cumsum(lengths[:-1], out=offsets[1:])
+        return flat, offsets, np.asarray(buffer_labels, dtype=np.int64)
+
     while True:
         order = list(paths)
         rng.shuffle(order)
+        buffer_ids: List[np.ndarray] = []
+        buffer_labels: List[int] = []
         for path in order:
             with np.load(path) as data:
                 ids = data["ids"]
                 offsets = data["offsets"]
                 labels = data["labels"]
-            length = len(labels)
-            if length == 0:
-                continue
-            perm = rng.permutation(length)
-            id_offsets = np.append(offsets, len(ids))
-            for index in perm[::batch_size]:
-                selection = perm[index:index + batch_size] if index + batch_size <= length else perm[index:]
-                if len(selection) < 8:
-                    continue
-                selection = np.sort(selection)
-                starts = id_offsets[selection]
-                ends = id_offsets[selection + 1]
-                bag_lengths = ends - starts
-                pieces = [ids[start:end] for start, end in zip(starts, ends)]
-                flat = np.concatenate(pieces).astype(np.int64)
-                new_offsets = np.zeros(len(pieces), dtype=np.int64)
-                np.cumsum(bag_lengths[:-1], out=new_offsets[1:])
-                yield flat, new_offsets, labels[selection].astype(np.int64)
+            ends = np.append(offsets[1:], len(ids))
+            for index in rng.permutation(len(labels)):
+                buffer_ids.append(ids[int(offsets[index]):int(ends[index])])
+                buffer_labels.append(int(labels[index]))
+                if len(buffer_ids) >= batch_size:
+                    yield assemble(buffer_ids, buffer_labels)
+                    buffer_ids, buffer_labels = [], []
+        if buffer_ids:
+            yield assemble(buffer_ids, buffer_labels)
         if not repeat:
             break
-        epoch += 1
 
 
 def evaluate(model: BigEditPredictor, paths: List[Path], device: str, max_samples: int = 200_000) -> Dict:

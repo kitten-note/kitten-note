@@ -1,0 +1,23 @@
+{
+  "gate": {
+    "threshold": 0.8537710905075073,
+    "precision": 0.8803695150115474,
+    "recall": 0.8176748176748176,
+    "coverage": 0.28404618210443455
+  },
+  "class_thresholds": {
+    "FIX_CHAR": 0.9998534917831421,
+    "DEL_CHAR": 0.51639723777771,
+    "INS_CHAR": 0.9999943971633911,
+    "DEL_SPAN": 0.998593270778656,
+    "INS_SPAN_COPY": 0.9999998807907104,
+    "FMT_BULLET": 0.5
+  },
+  "sweep": {
+    "n": 400,
+    "fired_rate": 0.955,
+    "hit_rate": 0.1725,
+    "class_hit_rate": 0.1475,
+    "false_fire_rate": 0.7825
+  }
+}
