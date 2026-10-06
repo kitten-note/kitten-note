@@ -35,6 +35,23 @@ KittenNote 本体以 **GNU GPL v3.0** 发布，详见 [LICENSE](LICENSE)。
   - 用途：摄像头扫描识别二维码
   - 许可：**Apache License 2.0**
 
+## MathJax
+
+- 位置：`assets/mathjax/tex-svg-full.js`（v3.2.2，SHA-256 见 `assets/mathjax/README.md`）
+- 用途：LaTeX 笔记的公式与文档渲染（SVG 输出，纯离线）
+- 许可：**Apache License 2.0**（© MathJax Consortium）
+- 许可原文：`assets/mathjax/LICENSE`
+
+## Noto Sans SC（PDF 文本字体子集）
+
+- 位置：`assets/fonts/NotoSansSC-Regular-subset.ttf`
+- 用途：导出 PDF 时嵌入的正文字体，使文字可选中/可搜索（含 ~6,763 常用汉字与常用符号）
+- 来源：Google Fonts 的 Noto Sans SC 可变字体，经 `tools/build-font-subset.py` 固定 wght=400 并子集化
+- 许可：**SIL Open Font License 1.1**
+- 版权：Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
+- 许可原文：`assets/fonts/OFL.txt`
+- OFL 要求：分发二进制时保留版权与许可声明；**不得单独出售该字体**；修改后的字体版本不得使用保留字体名（本仓库仅为子集化，未改动字形）
+
 ## NES 模型权重
 
 - 仓库中的 `assets/nes-model/` 仅包含模型元数据（`config.json`、`tokenizer.json` 等），**模型权重不随仓库分发**。

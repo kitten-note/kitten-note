@@ -22,8 +22,10 @@
  */
 
 import { Toast } from './toast.js';
-import { buildPdfFromCanvases } from './pdf.js';
+import { buildPdfFromCanvases, PdfBuilder } from './pdf.js';
 import { renderTextNoteToCanvases } from './pdf-text.js';
+import { renderTextNoteToPages } from './pdf-layout.js';
+import { loadPdfFont } from './font.js';
 
 export class ExportManager {
     constructor(db, app) {
@@ -131,8 +133,32 @@ export class ExportManager {
     
     async exportTextAsPDF(note) {
         try {
-            const canvases = renderTextNoteToCanvases(note);
-            const blob = await buildPdfFromCanvases(canvases);
+            let blob = null;
+
+            // Preferred: vector text with an embedded OFL font (selectable/searchable).
+            try {
+                const { font, bytes } = await loadPdfFont();
+                const layout = renderTextNoteToPages(note, font);
+                if (layout) {
+                    const builder = new PdfBuilder();
+                    const fontRef = builder.addFont(bytes, font);
+                    for (const page of layout.pages) {
+                        builder.addTextPage({ ops: page.ops, fontRef });
+                    }
+                    blob = new Blob([await builder.build()], { type: 'application/pdf' });
+                } else {
+                    console.info('[PDF] Font subset lacks some characters, using raster fallback.');
+                }
+            } catch (error) {
+                console.warn('[PDF] Vector export unavailable, falling back to raster:', error);
+            }
+
+            // Fallback: raster pages (always renders, text not selectable).
+            if (!blob) {
+                const canvases = renderTextNoteToCanvases(note);
+                blob = await buildPdfFromCanvases(canvases);
+            }
+
             this.downloadBlob(blob, this.sanitizeFilename(note.title) + '.pdf');
             Toast.show('已导出为 PDF', 'success');
         } catch (error) {

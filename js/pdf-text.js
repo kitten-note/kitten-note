@@ -60,7 +60,7 @@ function fontFor(style, sizePx) {
 }
 
 /** Parse inline markdown into styled runs (same subset as the editor). */
-function parseInline(text) {
+export function parseInline(text) {
     const runs = [];
     const pattern = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|\+\+[^+]+\+\+|~~[^~]+~~|`[^`]+`)/g;
     let last = 0;
@@ -86,7 +86,7 @@ function parseInline(text) {
 }
 
 /** Split markdown into simple blocks. */
-function parseBlocks(markdown) {
+export function parseBlocks(markdown) {
     const blocks = [];
     const lines = String(markdown || '').replace(/\r\n?/g, '\n').split('\n');
 

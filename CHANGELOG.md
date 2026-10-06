@@ -40,6 +40,7 @@
 ### 导出
 
 - PDF 导出改为真正的文件生成：新增零依赖 PDF 生成器（`js/pdf.js`）与文字排版引擎（`js/pdf-text.js`），点击导出即下载 `.pdf` 文件，不再弹出浏览器打印对话框。
+- **PDF 文字可选中**：文字笔记使用矢量文本 + 内嵌 Noto Sans SC 子集字体（OFL 1.1，~2 MiB），检索/复制/无障碍均可用；字体未覆盖的字符自动回退为图像渲染。新增 `js/truetype.js`、`js/pdf-layout.js`、`js/font.js` 与 `tools/build-font-subset.py`（可复现子集化）。
 - 文字笔记按 A4 多页排版（标题、列表、引用、行内代码、下划线/删除线等，中文自动换行与分页，页脚页码）。
 - 墨迹笔记按内容自适应铺满 A4 页面，支持导出任意笔记（包括当前未打开的笔记），图片素材完整内联。
 - 顺带修复 PNG 导出同样的"只导出当前画布"问题。
@@ -47,7 +48,7 @@
 ### 测试与 CI
 
 - 修复失配的测试。
-- 新增 PDF 生成器测试（`tests/pdf.test.js`）。
+- 新增 PDF 生成器测试（`tests/pdf.test.js`）、TrueType 解析测试（`tests/truetype.test.js`）与矢量排版测试（`tests/pdf-layout.test.js`）。
 - 引入 GitHub Actions 持续集成。
 
 ### 文档
