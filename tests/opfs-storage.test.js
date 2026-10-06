@@ -182,8 +182,8 @@ await test('isSupported returns true when navigator.storage.getDirectory exists'
     assert(OPFSBlockStorage.isSupported(), 'Should be supported with mock');
 });
 
-await test('BLOCK_SIZE is 128KB', () => {
-    assertEqual(OPFSBlockStorage.BLOCK_SIZE, 128 * 1024, 'Block size should be 128KB');
+await test('BLOCK_SIZE is 1MB', () => {
+    assertEqual(OPFSBlockStorage.BLOCK_SIZE, 1024 * 1024, 'Block size should be 1MB');
 });
 
 await test('init creates root directory structure', async () => {
@@ -235,8 +235,8 @@ await test('write large content splits into multiple blocks', async () => {
     await storage.init();
 
     const noteId = 'test-large-1';
-    // Create content larger than 128KB
-    const content = 'A'.repeat(200 * 1024); // 200KB
+    // Create content spanning exactly 2 blocks (1MB + 100 bytes)
+    const content = 'A'.repeat(1024 * 1024) + 'B'.repeat(100);
     const stats = await storage.writeNoteContent(noteId, content);
 
     assertEqual(stats.totalBlocks, 2, 'Should split into 2 blocks');
@@ -272,8 +272,8 @@ await test('modified content rewrites only changed blocks', async () => {
 
     const noteId = 'test-incr-2';
     // Create 3-block content
-    const block1 = 'A'.repeat(128 * 1024);
-    const block2 = 'B'.repeat(128 * 1024);
+    const block1 = 'A'.repeat(1024 * 1024);
+    const block2 = 'B'.repeat(1024 * 1024);
     const block3 = 'C'.repeat(50 * 1024);
     const content = block1 + block2 + block3;
 
@@ -293,15 +293,15 @@ await test('shrinking content removes extra blocks', async () => {
     await storage.init();
 
     const noteId = 'test-incr-3';
-    // Write 3-block content
-    const content = 'A'.repeat(300 * 1024);
+    // Write 4-block content: 3 full 1MB blocks + a 10-byte tail block
+    const content = 'A'.repeat(3 * 1024 * 1024 + 10);
     await storage.writeNoteContent(noteId, content);
 
     // Shrink to 1 block
     const smallContent = 'B'.repeat(50 * 1024);
     const stats = await storage.writeNoteContent(noteId, smallContent);
     assertEqual(stats.totalBlocks, 1, 'Should have 1 block after shrinking');
-    assertEqual(stats.blocksRemoved, 2, 'Should remove 2 blocks');
+    assertEqual(stats.blocksRemoved, 3, 'Should remove 3 blocks');
 
     const readContent = await storage.readNoteContent(noteId);
     assertEqual(readContent, smallContent, 'Should read shrunk content');
@@ -341,7 +341,7 @@ await test('getHealthInfo returns correct stats', async () => {
 
     const health = await storage.getHealthInfo();
     assertEqual(health.noteCount, 2, 'Should have 2 notes');
-    assertEqual(health.blockSize, 128 * 1024, 'Block size should be 128KB');
+    assertEqual(health.blockSize, 1024 * 1024, 'Block size should be 1MB');
     assert(health.totalSize > 0, 'Total size should be > 0');
     assert(health.totalBlocks >= 2, 'Should have at least 2 blocks');
 });

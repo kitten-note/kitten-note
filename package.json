@@ -1,0 +1,14 @@
+{
+  "name": "kitten-note",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "跨平台 PWA 笔记软件（文字+墨迹）",
+  "license": "GPL-3.0-only",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node tests/opfs-storage.test.js && node tests/crypto.test.js",
+    "test:opfs": "node tests/opfs-storage.test.js",
+    "serve": "python -m http.server 8000"
+  }
+}
