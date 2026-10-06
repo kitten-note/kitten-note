@@ -14,6 +14,11 @@
   - 内部以 Markdown 格式存储，可随时切换到 Markdown 源代码模式直接编辑
   - 字号缩放、光标位置记忆、输入后自动保存
   - NES（Next Edit Suggestion）AI 编写建议：停止输入后自动触发，按 Tab 接受
+- **LaTeX 模式（文字笔记可在 Markdown / LaTeX 间切换）**
+  - 内置 MathJax 3.2.2 `tex-svg-full`（Apache-2.0，纯离线）：数学排版，附带 physics（`\qty`、`\dv`…）、mhchem（`\ce`）、color/bbox 等常用包
+  - 源码 + 实时预览双栏编辑器（可切仅源码/仅预览）：渲染错误提示、常用片段工具栏（分式/根号/矩阵/化学式/物理量…）
+  - 按笔记保存的自定义宏面板（`\newcommand` / `\renewcommand` / `\DeclareMathOperator` 等）
+  - 支持导入 `.tex` 文档（自动提取正文与宏定义）和 `.sty`/`.cls` 宏包；支持导出完整 `.tex` 文档
 - **墨迹编辑器**
   - 完整的压力感应笔触支持，可开关压感变宽，支持平滑处理与自动矫直
   - 绘制工具：移动、画笔、荧光笔、橡皮擦、套索选择、直线、矩形、圆形、箭头、插入图片
@@ -61,10 +66,11 @@
 ### 📤 导入与导出
 
 - **导入**
-  - `.md`、`.ktnt`、`.json`（自动识别 KTNT 格式）导入到指定笔记本
+  - `.md`、`.tex`/`.sty`/`.cls`（LaTeX 文档与宏包）、`.ktnt`、`.json`（自动识别 KTNT 格式）导入到指定笔记本
   - `.zip` 笔记本包导入（支持整个笔记本恢复）
 - **导出**
-  - 文字笔记 → Markdown 文件
+  - Markdown 笔记 → Markdown 文件；LaTeX 笔记 → 完整 `.tex` 文档（含宏与文档骨架）
+  - 文字笔记 → KTNT 封装（版本 3：`textMode` + `latexMacros` + 内容），可再次导入
   - 墨迹笔记 → KTNT 原生格式（版本 2，含内联图片）
   - 任意笔记 → 真正的 PDF 文件（文字笔记为**可选中/可搜索**的矢量文本，内嵌 OFL 字体子集；含字体未覆盖字符时自动回退为图像版；墨迹笔记自适应铺满 A4，无需浏览器打印对话框）
   - 墨迹笔记 → PNG 图片（含背景样式）
@@ -121,6 +127,8 @@ OPFS（可选，/kittennote/）
 | `js/sync.js` | WebRTC 配对、差量同步、设备与密钥管理 |
 | `js/nes.js` | NES 推理引擎（API / 本地）、模型下载与管理 |
 | `js/text-editor.js` | Markdown 编辑与渲染、NES 建议集成 |
+| `js/latex-editor.js` | LaTeX 源码+预览编辑器、宏面板、片段工具栏 |
+| `js/latex.js` | MathJax 加载、LaTeX→HTML 转换、宏注入与预览渲染 |
 | `js/ink-editor.js` | Canvas 绘制、笔触处理、图形/图片/套索选择 |
 | `js/directory-tree.js` | 目录树渲染、搜索、拖拽排序 |
 | `js/settings.js` | 设置界面、主题、备份、存储引擎管理 |
@@ -257,6 +265,8 @@ kitten-note/
 │   ├── opfs-storage.js     # OPFS块存储引擎
 │   ├── crypto.js           # 端到端加密
 │   ├── utils.js            # 通用工具函数
+│   ├── latex-editor.js     # LaTeX 源码+预览编辑器
+│   ├── latex.js            # MathJax 封装与 LaTeX→HTML 转换
 │   ├── text-editor.js      # 文字编辑器
 │   ├── ink-editor.js       # 墨迹编辑器
 │   ├── directory-tree.js   # 目录树
@@ -278,7 +288,13 @@ kitten-note/
 ├── tests/                  # Node.js测试
 │   ├── opfs-storage.test.js
 │   ├── crypto.test.js
-│   └── pdf.test.js
+│   ├── pdf.test.js
+│   ├── truetype.test.js
+│   ├── pdf-layout.test.js
+│   └── latex.test.js
+│
+├── tools/                  # 维护脚本
+│   └── build-font-subset.py  # PDF 字体子集化（fontTools）
 │
 ├── icons/                  # 应用图标
 │   └── *-*.png             # 各尺寸PNG
@@ -286,6 +302,8 @@ kitten-note/
 └── assets/                 # 第三方资源
     ├── fontawesome/        # Font Awesome图标
     ├── qrcode/             # 二维码生成与识别
+    ├── mathjax/            # MathJax tex-svg-full（Apache-2.0，离线公式渲染）
+    ├── fonts/              # Noto Sans SC 子集（OFL 1.1，PDF 内嵌字体）
     ├── transformers.js/    # 浏览器端推理框架（含ONNX Runtime）
     └── nes-model/          # NES模型元数据（config/tokenizer等）
 ```

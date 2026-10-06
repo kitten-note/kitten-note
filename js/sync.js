@@ -1691,6 +1691,8 @@ export class SyncManager {
             id,
             title: clampString(raw.title, 300, '未命名笔记'),
             type,
+            textMode: raw.textMode === 'latex' ? 'latex' : 'markdown',
+            latexMacros: clampString(raw.latexMacros, 50000, ''),
             content,
             notebookId: typeof raw.notebookId === 'string' ? clampString(raw.notebookId, 128) : null,
             order: Number.isFinite(raw.order) ? raw.order : Date.now(),

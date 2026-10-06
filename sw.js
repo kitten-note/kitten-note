@@ -55,6 +55,8 @@ const SHELL_ASSETS = [
     './js/pdf-layout.js',
     './js/truetype.js',
     './js/font.js',
+    './js/latex.js',
+    './js/latex-editor.js',
     // Icons
     './icons/favicon.ico',
     './icons/icon.svg',

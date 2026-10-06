@@ -121,6 +121,10 @@
                         <span id="save-status" class="save-status saved">✓ 已保存</span>
                     </div>
                     <div class="editor-actions">
+                        <select id="text-mode-select" class="text-mode-select hidden" title="文字笔记模式">
+                            <option value="markdown">Markdown</option>
+                            <option value="latex">LaTeX</option>
+                        </select>
                         <button id="zoom-out-btn" class="btn-icon" title="缩小">
                             <i class="fas fa-minus"></i>
                         </button>
@@ -266,6 +270,58 @@
                         </button>
                     </div>
                     <textarea id="md-source-textarea" class="md-source-textarea" spellcheck="false"></textarea>
+                </div>
+
+                <!-- LaTeX Editor Toolbar -->
+                <div id="latex-toolbar" class="toolbar latex-toolbar hidden">
+                    <div class="toolbar-group">
+                        <button class="btn-tool" data-latex-snippet="$x$" title="行内公式">∑</button>
+                        <button class="btn-tool" data-latex-snippet="$$&#10;&#10;$$" title="独立公式块">∑∎</button>
+                        <button class="btn-tool" data-latex-snippet="\frac{a}{b}" title="分式">分式</button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="btn-tool" data-latex-snippet="\sqrt{x}" title="根号">√</button>
+                        <button class="btn-tool" data-latex-snippet="\sum_{i=1}^{n}" title="求和">Σ</button>
+                        <button class="btn-tool" data-latex-snippet="\int_{a}^{b}" title="积分">∫</button>
+                        <button class="btn-tool" data-latex-snippet="\begin{pmatrix} a &amp; b \\ c &amp; d \end{pmatrix}" title="矩阵">矩阵</button>
+                        <button class="btn-tool" data-latex-snippet="\begin{cases} x &amp; x > 0 \\ 0 &amp; x \le 0 \end{cases}" title="分段函数">分段</button>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="btn-tool" data-latex-snippet="\ce{2H2 + O2 -> 2H2O}" title="化学式（mhchem）">化学</button>
+                        <button class="btn-tool" data-latex-snippet="\qty{9.8}{m/s^2}" title="物理量（physics）">物理量</button>
+                        <button class="btn-tool" data-latex-snippet="\begin{itemize}&#10;\item 第一项&#10;\end{itemize}" title="无序列表">列表</button>
+                        <button class="btn-tool" data-latex-snippet="\section{标题}" title="章节">章节</button>
+                    </div>
+                    <div class="toolbar-group latex-toolbar-status">
+                        <button id="latex-macros-toggle" class="btn-tool" title="自定义宏（\newcommand 等）">
+                            <i class="fas fa-code"></i> 宏
+                        </button>
+                        <button id="latex-view-toggle" class="btn-tool" title="切换视图">
+                            <i class="fas fa-columns"></i>
+                        </button>
+                        <span id="latex-status" class="latex-status">就绪</span>
+                    </div>
+                </div>
+
+                <!-- LaTeX Editor (source + live preview) -->
+                <div id="latex-editor" class="editor-area latex-editor hidden view-split">
+                    <div class="latex-panes">
+                        <div class="latex-source-pane">
+                            <textarea id="latex-source" class="latex-source" spellcheck="false"
+                                      placeholder="在此输入 LaTeX，例如：&#10;\section{引言}&#10;质能方程 $E = mc^2$，水分子 \ce{H2O}。"></textarea>
+                        </div>
+                        <div class="latex-preview-pane">
+                            <div id="latex-preview" class="latex-preview-body"></div>
+                        </div>
+                    </div>
+                    <div id="latex-macros-panel" class="latex-macros-panel hidden">
+                        <div class="latex-macros-header">
+                            <span>自定义宏（仅对本笔记生效）</span>
+                            <span class="setting-hint">支持 \newcommand / \renewcommand / \DeclareMathOperator</span>
+                        </div>
+                        <textarea id="latex-macros-input" class="latex-macros-input" spellcheck="false"
+                                  placeholder="\newcommand{\R}{\mathbb{R}}&#10;\newcommand{\dd}{\mathrm{d}}&#10;\DeclareMathOperator{\rank}{rank}"></textarea>
+                    </div>
                 </div>
                 
                 <!-- Ink Editor -->
@@ -1118,7 +1174,7 @@
             <div class="modal-body">
                 <div class="import-section">
                     <p class="import-hint">选择 .md、.ktnt、.json 文件导入到指定笔记本</p>
-                    <input type="file" id="import-file-input" accept=".md,.ktnt,.json,.zip" multiple style="display: none;">
+                    <input type="file" id="import-file-input" accept=".md,.tex,.sty,.cls,.ktnt,.json,.zip" multiple style="display: none;">
                     <button id="import-select-files" class="btn btn-secondary">
                         <i class="fas fa-file"></i> 选择文件
                     </button>

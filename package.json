@@ -7,7 +7,7 @@
   "license": "GPL-3.0-only",
   "engines": { "node": ">=18" },
   "scripts": {
-    "test": "node tests/opfs-storage.test.js && node tests/crypto.test.js && node tests/pdf.test.js && node tests/truetype.test.js && node tests/pdf-layout.test.js",
+    "test": "node tests/opfs-storage.test.js && node tests/crypto.test.js && node tests/pdf.test.js && node tests/truetype.test.js && node tests/pdf-layout.test.js && node tests/latex.test.js",
     "test:opfs": "node tests/opfs-storage.test.js",
     "serve": "python -m http.server 8000"
   }

@@ -2878,3 +2878,167 @@ html, body {
     word-break: break-all;
     white-space: normal;
 }
+
+/* ======== LaTeX editor ======== */
+.text-mode-select {
+    margin-right: 6px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85em;
+}
+
+.latex-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.latex-panes {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    gap: 1px;
+    background: var(--border-color);
+}
+
+.latex-source-pane {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    background: var(--bg-primary);
+}
+
+.latex-source {
+    flex: 1;
+    width: 100%;
+    resize: none;
+    border: none;
+    outline: none;
+    padding: 16px 18px;
+    font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.75;
+    background: transparent;
+    color: var(--text-primary);
+    tab-size: 2;
+}
+
+.latex-preview-pane {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    background: var(--bg-primary);
+}
+
+.latex-preview-body {
+    padding: 16px 22px;
+    line-height: 1.75;
+    color: var(--text-primary);
+    overflow-wrap: break-word;
+}
+
+.latex-preview-body .latex-title {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+    margin-bottom: 14px;
+}
+
+.latex-preview-body .latex-title h1 {
+    margin: 0 0 4px;
+    font-size: 1.5em;
+}
+
+.latex-preview-body .latex-title p {
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.latex-preview-body blockquote {
+    border-left: 4px solid var(--border-color);
+    margin: 8px 0;
+    padding-left: 12px;
+    color: var(--text-secondary);
+}
+
+.latex-preview-body .latex-center {
+    text-align: center;
+}
+
+.latex-preview-body merror {
+    color: #b91c1c;
+}
+
+.latex-editor.view-source .latex-preview-pane {
+    display: none;
+}
+
+.latex-editor.view-preview .latex-source-pane {
+    display: none;
+}
+
+.latex-status {
+    font-size: 0.8em;
+    color: var(--text-secondary);
+    margin-left: 6px;
+    white-space: nowrap;
+}
+
+.latex-status.has-error {
+    color: #b91c1c;
+}
+
+.latex-toolbar-status {
+    margin-left: auto;
+    align-items: center;
+}
+
+.latex-macros-panel {
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    max-height: 32%;
+    background: var(--bg-secondary);
+}
+
+.latex-macros-header {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 6px 12px;
+    font-size: 0.82em;
+    color: var(--text-secondary);
+}
+
+.latex-macros-input {
+    flex: 1;
+    min-height: 72px;
+    resize: vertical;
+    border: none;
+    border-top: 1px solid var(--border-color);
+    outline: none;
+    padding: 8px 12px;
+    font-family: "SFMono-Regular", Consolas, "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+@media (max-width: 760px) {
+    .latex-panes {
+        flex-direction: column;
+    }
+
+    .latex-source-pane,
+    .latex-preview-pane {
+        flex: 1 1 50%;
+    }
+
+    .latex-toolbar {
+        overflow-x: auto;
+    }
+}

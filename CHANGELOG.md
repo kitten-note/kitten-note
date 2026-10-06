@@ -37,6 +37,15 @@
 - 下载分片进行哈希校验，保证模型文件完整性。
 - 模型分片缓存到 IndexedDB，推理时直接供 transformers.js 读取。
 
+### LaTeX
+
+- 文字笔记支持 Markdown / LaTeX 双模式（编辑器头部切换，内容按模式解释，可随时互切）。
+- 内置 MathJax 3.2.2 `tex-svg-full`（Apache-2.0，纯离线）：数学、physics（`\qty`、`\dv`…）、mhchem（`\ce`）、color/bbox 等包随包内置。
+- 新增 LaTeX 编辑器（`js/latex-editor.js` + `js/latex.js`）：源码 + 实时 SVG 预览双栏（可切单栏）、渲染错误提示、片段工具栏、按笔记保存的宏面板。
+- 支持导入 `.tex`（自动提取正文与 `\newcommand` 宏）与 `.sty`/`.cls` 宏包；支持导出完整 `.tex` 文档。
+- 新增 KTNT v3 文字封装：Markdown / LaTeX 笔记均可导出为 `.ktnt` 并再次导入。
+- 新增 `tests/latex.test.js`（13 项纯函数测试）。
+
 ### 导出
 
 - PDF 导出改为真正的文件生成：新增零依赖 PDF 生成器（`js/pdf.js`）与文字排版引擎（`js/pdf-text.js`），点击导出即下载 `.pdf` 文件，不再弹出浏览器打印对话框。

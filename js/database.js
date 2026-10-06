@@ -644,6 +644,8 @@ export class Database {
             id: this.generateId(),
             title: data.title || '新建笔记',
             type: data.type || 'text', // 'text' or 'ink'
+            textMode: data.textMode === 'latex' ? 'latex' : 'markdown',
+            latexMacros: typeof data.latexMacros === 'string' ? data.latexMacros : '',
             content: data.content || (data.type === 'ink' ? { version: 1, strokes: [] } : ''),
             notebookId: data.notebookId,
             order: data.order || Date.now(),

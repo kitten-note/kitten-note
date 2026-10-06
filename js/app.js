@@ -31,6 +31,8 @@ import { NESManager } from './nes.js';
 import { ExportManager } from './export.js';
 import { Toast } from './toast.js';
 import { escapeHtml } from './utils.js';
+import { LatexEditor } from './latex-editor.js';
+import { extractDocumentBody, normalizeMacroBlock } from './latex.js';
 
 class DebugLogger {
     constructor(scope = 'KittenNote') {
@@ -198,6 +200,7 @@ class KittenNoteApp {
         this.db = null;
         this.directoryTree = null;
         this.textEditor = null;
+        this.latexEditor = null;
         this.inkEditor = null;
         this.settingsManager = null;
         this.syncManager = null;
@@ -234,6 +237,7 @@ class KittenNoteApp {
             // Initialize components
             this.directoryTree = new DirectoryTree(this.db, this);
             this.textEditor = new TextEditor(this);
+            this.latexEditor = new LatexEditor(this);
             this.inkEditor = new InkEditor(this);
             this.settingsManager = new SettingsManager(this);
             this.syncManager = new SyncManager(this.db, this);
@@ -543,6 +547,11 @@ class KittenNoteApp {
         document.getElementById('undo-btn')?.addEventListener('click', () => this.undo());
         document.getElementById('redo-btn')?.addEventListener('click', () => this.redo());
         document.getElementById('save-btn')?.addEventListener('click', () => this.save());
+
+        // Text note mode switch (Markdown / LaTeX)
+        document.getElementById('text-mode-select')?.addEventListener('change', (event) => {
+            this.switchTextMode(event.target.value);
+        });
         
         // Export dropdown
         this.setupExportDropdown();
@@ -1035,6 +1044,14 @@ class KittenNoteApp {
     }
     
     handleKeyboardShortcut(e) {
+        // LaTeX source/textarea keeps native undo/redo
+        if ((e.ctrlKey || e.metaKey) && ['z', 'y'].includes(e.key.toLowerCase())) {
+            const targetId = e.target?.id;
+            if (targetId === 'latex-source' || targetId === 'latex-macros-input') {
+                return;
+            }
+        }
+
         // Global shortcuts
         if (e.ctrlKey || e.metaKey) {
             switch (e.key.toLowerCase()) {
@@ -1287,17 +1304,57 @@ class KittenNoteApp {
                     }
                     const content = await this.readFileContent(file);
                     const isJsonFile = file.name.endsWith('.json');
+                    const isTexFile = /\.(tex|sty|cls)$/i.test(file.name);
                     let isKtnt = file.name.endsWith('.ktnt');
-                    const title = file.name.replace(/\.(md|ktnt|json)$/i, '');
+                    const title = file.name.replace(/\.(md|tex|sty|cls|ktnt|json)$/i, '');
+
+                    // LaTeX sources and packages import as LaTeX notes
+                    if (isTexFile) {
+                        const macros = normalizeMacroBlock(content);
+                        const body = file.name.toLowerCase().endsWith('.tex')
+                            ? extractDocumentBody(content)
+                            : content;
+                        await this.db.createNote({
+                            title,
+                            type: 'text',
+                            textMode: 'latex',
+                            latexMacros: macros,
+                            content: body || content,
+                            notebookId,
+                            order: Date.now()
+                        });
+                        successCount++;
+                        continue;
+                    }
                     
                     // Auto-detect .json files: check if they are ktnt format
                     if (isJsonFile && !isKtnt) {
                         try {
                             const parsed = JSON.parse(content);
-                            if (parsed?.format === 'ktnt' || parsed?.content?.strokes) {
+                            if (parsed?.format === 'ktnt' || parsed?.content?.strokes || parsed?.kind === 'note') {
                                 isKtnt = true;
                             }
                         } catch { /* not valid JSON, treat as text */ }
+                    }
+                    
+                    // KTNT text wrapper (Markdown / LaTeX note packaged as .ktnt)
+                    if (isKtnt) {
+                        const parsed = JSON.parse(content);
+                        const isTextKtnt = parsed?.kind === 'note' && parsed?.noteType !== 'ink' ||
+                                           (parsed?.format === 'ktnt' && typeof parsed?.content === 'string');
+                        if (isTextKtnt) {
+                            await this.db.createNote({
+                                title: parsed.title || title,
+                                type: 'text',
+                                textMode: parsed.textMode === 'latex' ? 'latex' : 'markdown',
+                                latexMacros: typeof parsed.latexMacros === 'string' ? parsed.latexMacros : '',
+                                content: typeof parsed.content === 'string' ? parsed.content : '',
+                                notebookId,
+                                order: Date.now()
+                            });
+                            successCount++;
+                            continue;
+                        }
                     }
                     
                     let noteContent = content;
@@ -1337,8 +1394,7 @@ class KittenNoteApp {
                         notebookId,
                         order: Date.now()
                     });
-                    successCount++;
-                } catch (error) {
+                    successCount++;                } catch (error) {
                     console.error('Failed to import file:', file.name, error);
                     Toast.show(`导入 ${file.name} 失败`, 'error');
                 }
@@ -1458,12 +1514,14 @@ class KittenNoteApp {
         // Save current note's view state before switching
         if (this.currentNote) {
             if (this.currentNote.type === 'text') {
-                this.noteViewStates.set(this.currentNote.id, {
-                    type: 'text',
-                    scrollTop: this.textEditor.getScrollTop(),
-                    cursorOffset: this.textEditor.getCursorOffset(),
-                    fontSize: this.textEditor.getFontSize()
-                });
+                if (this.currentNote.textMode !== 'latex') {
+                    this.noteViewStates.set(this.currentNote.id, {
+                        type: 'text',
+                        scrollTop: this.textEditor.getScrollTop(),
+                        cursorOffset: this.textEditor.getCursorOffset(),
+                        fontSize: this.textEditor.getFontSize()
+                    });
+                }
             } else {
                 this.noteViewStates.set(this.currentNote.id, {
                     type: 'ink',
@@ -1506,22 +1564,40 @@ class KittenNoteApp {
             this.updateSaveStatus('saved');
             
             // Show appropriate editor
+            const isLatexNote = note.type === 'text' && note.textMode === 'latex';
+            const setHidden = (id, hidden) => document.getElementById(id)?.classList.toggle('hidden', hidden);
+
+            const modeSelect = document.getElementById('text-mode-select');
+            if (modeSelect) {
+                modeSelect.classList.toggle('hidden', note.type !== 'text');
+                modeSelect.value = isLatexNote ? 'latex' : 'markdown';
+            }
+            this.updateExportMenuForNote(note);
+
             if (note.type === 'text') {
-                document.getElementById('text-toolbar')?.classList.remove('hidden');
-                document.getElementById('ink-toolbar')?.classList.add('hidden');
-                document.getElementById('text-editor')?.classList.remove('hidden');
-                document.getElementById('ink-editor')?.classList.add('hidden');
-                document.getElementById('md-source-editor')?.classList.add('hidden');
-                document.getElementById('md-source-back')?.classList.add('hidden');
-                this.textEditor.loadContent(note.content);
+                setHidden('text-toolbar', isLatexNote);
+                setHidden('ink-toolbar', true);
+                setHidden('text-editor', isLatexNote);
+                setHidden('latex-toolbar', !isLatexNote);
+                setHidden('latex-editor', !isLatexNote);
+                setHidden('ink-editor', true);
+                setHidden('md-source-editor', true);
+                setHidden('md-source-back', true);
+                if (isLatexNote) {
+                    this.latexEditor.load(note);
+                } else {
+                    this.textEditor.loadContent(note.content);
+                }
                 this.applyNotebookStyle(this.currentNotebook);
             } else {
-                document.getElementById('text-toolbar')?.classList.add('hidden');
-                document.getElementById('ink-toolbar')?.classList.remove('hidden');
-                document.getElementById('text-editor')?.classList.add('hidden');
-                document.getElementById('ink-editor')?.classList.remove('hidden');
-                document.getElementById('md-source-editor')?.classList.add('hidden');
-                document.getElementById('md-source-back')?.classList.add('hidden');
+                setHidden('text-toolbar', true);
+                setHidden('latex-toolbar', true);
+                setHidden('latex-editor', true);
+                setHidden('ink-toolbar', false);
+                setHidden('text-editor', true);
+                setHidden('ink-editor', false);
+                setHidden('md-source-editor', true);
+                setHidden('md-source-back', true);
                 this.inkEditor.loadContent(note.content);
                 this.applyNotebookStyle(this.currentNotebook);
             }
@@ -1559,7 +1635,11 @@ class KittenNoteApp {
             requestAnimationFrame(() => {
                 if (note.type === 'text') {
                     if (!savedViewState) {
-                        this.textEditor.focusAtEnd();
+                        if (isLatexNote) {
+                            this.latexEditor.focus();
+                        } else {
+                            this.textEditor.focusAtEnd();
+                        }
                     }
                 } else {
                     this.inkEditor.refreshLayout();
@@ -1637,18 +1717,32 @@ class KittenNoteApp {
         
         try {
             const title = document.getElementById('note-title').value;
-            const content = this.currentNote.type === 'text' 
-                ? (this.isSourceMode ? this.textEditor.getSourceValue() : this.textEditor.getContent())
-                : this.inkEditor.getContent();
+
+            let content;
+            const extraUpdates = {};
+            if (this.currentNote.type === 'text') {
+                if (this.currentNote.textMode === 'latex') {
+                    content = this.latexEditor.getContent();
+                    extraUpdates.latexMacros = this.latexEditor.getMacros();
+                } else {
+                    content = this.isSourceMode
+                        ? this.textEditor.getSourceValue()
+                        : this.textEditor.getContent();
+                }
+            } else {
+                content = this.inkEditor.getContent();
+            }
             
             await this.db.updateNote(this.currentNote.id, {
                 title,
                 content,
+                ...extraUpdates,
                 updatedAt: new Date().toISOString()
             });
             
             this.currentNote.title = title;
             this.currentNote.content = content;
+            Object.assign(this.currentNote, extraUpdates);
             this.isModified = false;
             
             // Add to sync log
@@ -1667,6 +1761,53 @@ class KittenNoteApp {
         }
     }
     
+    /**
+     * Switch a text note between Markdown and LaTeX modes.
+     * The stored source text is kept as-is; only the interpretation changes.
+     */
+    async switchTextMode(mode) {
+        if (!this.currentNote || this.currentNote.type !== 'text') return;
+        const current = this.currentNote.textMode || 'markdown';
+        if (mode === current) return;
+
+        const confirmed = confirm(
+            mode === 'latex'
+                ? '切换为 LaTeX 模式后，现有内容将按 LaTeX 源码解释（可随时切回）。确定继续？'
+                : '切换回 Markdown 模式后，现有内容将按 Markdown 解释。确定继续？'
+        );
+        const modeSelect = document.getElementById('text-mode-select');
+        if (!confirmed) {
+            if (modeSelect) modeSelect.value = current;
+            return;
+        }
+
+        // Persist whatever the current mode produced before switching.
+        if (this.isModified) {
+            await this.save(true);
+        }
+
+        await this.db.updateNote(this.currentNote.id, { textMode: mode });
+        this.currentNote.textMode = mode;
+        await this.openNote(this.currentNote.id);
+        Toast.show(mode === 'latex' ? '已切换为 LaTeX 模式' : '已切换为 Markdown 模式', 'success');
+    }
+
+    /** Update the export dropdown labels for the current note type. */
+    updateExportMenuForNote(note) {
+        const mdButton = document.querySelector('#export-dropdown .dropdown-menu button[data-format="md"]');
+        if (mdButton) {
+            mdButton.textContent = (note.type === 'text' && note.textMode === 'latex')
+                ? '导出为 LaTeX (.tex)'
+                : '导出为 Markdown';
+        }
+        const ktntButton = document.querySelector('#export-dropdown .dropdown-menu button[data-format="ktnt"]');
+        if (ktntButton) {
+            ktntButton.textContent = note.type === 'ink'
+                ? '导出为 KTNT（墨迹）'
+                : '导出为 KTNT（文字封装）';
+        }
+    }
+
     async updateNoteTitle(title) {
         if (!this.currentNote) return;
         
@@ -1681,6 +1822,11 @@ class KittenNoteApp {
     
     undo() {
         if (this.currentNote?.type === 'text') {
+            if (this.currentNote.textMode === 'latex') {
+                this.latexEditor?.source?.focus();
+                document.execCommand?.('undo');
+                return;
+            }
             this.textEditor.undo();
         } else if (this.currentNote?.type === 'ink') {
             this.inkEditor.undo();
@@ -1689,6 +1835,11 @@ class KittenNoteApp {
     
     redo() {
         if (this.currentNote?.type === 'text') {
+            if (this.currentNote.textMode === 'latex') {
+                this.latexEditor?.source?.focus();
+                document.execCommand?.('redo');
+                return;
+            }
             this.textEditor.redo();
         } else if (this.currentNote?.type === 'ink') {
             this.inkEditor.redo();
@@ -1697,6 +1848,9 @@ class KittenNoteApp {
 
     zoom(direction) {
         // direction: 1 = zoom in, -1 = zoom out
+        if (this.currentNote?.type === 'text' && this.currentNote.textMode === 'latex') {
+            return; // LaTeX preview scales with the page zoom
+        }
         if (this.currentNote?.type === 'text') {
             const step = 2;
             const newSize = this.textEditor.getFontSize() + step * direction;
