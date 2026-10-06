@@ -1,0 +1,4 @@
+# Research data (wiki-derived corpus) and caches are not committed.
+data/
+__pycache__/
+*.pyc

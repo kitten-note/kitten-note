@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-10-06T19:11:52+0800",
+  "corpus_articles": 2161,
+  "corpus_chars": 415554,
+  "sample_counts": {
+    "train": 65014,
+    "val": 553,
+    "test": 618
+  },
+  "docs_used": 12000,
+  "seed": 20261006,
+  "device": "cuda",
+  "feature_dim": 16384,
+  "hdc_info": {
+    "train_seconds": 11.465442419052124,
+    "scale": 32.0
+  },
+  "thresholds": {
+    "hdc": 0.7502646446228027,
+    "softmax": 0.9073203802108765,
+    "markov": 1.0,
+    "prior": 0.5500046014785767
+  },
+  "target_precision": 0.88
+}

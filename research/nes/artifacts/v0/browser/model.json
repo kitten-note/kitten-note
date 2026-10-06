@@ -1,0 +1,28 @@
+{
+  "version": "eft-nes-v0",
+  "classes": [
+    "NO_EDIT",
+    "FIX_CHAR",
+    "DEL_CHAR",
+    "INS_CHAR",
+    "DEL_SPAN",
+    "INS_SPAN_COPY",
+    "FMT_BULLET"
+  ],
+  "feature_dim": 16384,
+  "hdc_dim": 8192,
+  "hdc_bins": 4096,
+  "hdc_scale": 32.0,
+  "softmax_temperature": 1.25,
+  "gate_thresholds": {
+    "hdc": 0.7502646446228027,
+    "softmax": 0.9073203802108765,
+    "markov": 1.0,
+    "prior": 0.5500046014785767
+  },
+  "files": {
+    "prototypes": "prototypes.bin",
+    "base": "base.bin",
+    "softmax": "softmax.bin"
+  }
+}
