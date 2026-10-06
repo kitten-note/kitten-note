@@ -122,6 +122,54 @@ def load_corpus() -> list[str]:
     return [line for line in CORPUS_PATH.read_text(encoding="utf-8").split("\n") if line.strip()]
 
 
+def expand(target_total: int, minutes: float = 50.0) -> None:
+    """Politely grow the cached corpus up to `target_total` articles.
+
+    Appends to corpus.txt, dedupes against existing lines, honours a wall-clock
+    deadline and refreshes the manifest. Safe to interrupt and re-run.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    existing_lines: list[str] = []
+    if CORPUS_PATH.exists():
+        existing_lines = [line for line in CORPUS_PATH.read_text(encoding="utf-8").split("\n") if line.strip()]
+    if len(existing_lines) >= target_total:
+        print(f"[corpus] already at {len(existing_lines)} articles (target {target_total}); skip")
+        return
+
+    seen = {line[:80] for line in existing_lines}
+    deadline = time.time() + minutes * 60
+    needed = target_total - len(existing_lines)
+    print(f"[corpus] expanding {len(existing_lines)} -> {target_total} (+{needed}) with deadline {minutes:.0f} min")
+
+    newly = []
+    while len(existing_lines) + len(newly) < target_total and time.time() < deadline:
+        batch = fetch_articles(min(400, needed - len(newly)))
+        added = 0
+        for line in batch:
+            key = line[:80]
+            if key in seen:
+                continue
+            seen.add(key)
+            newly.append(line)
+            added += 1
+        print(f"[corpus] +{added} (total now {len(existing_lines) + len(newly)})", flush=True)
+        if added == 0:
+            break
+
+    all_lines = existing_lines + newly
+    CORPUS_PATH.write_text("\n".join(all_lines) + "\n", encoding="utf-8")
+    manifest = {
+        "source": "zh.wikipedia.org (random article intros, plain text)",
+        "license": "CC BY-SA 4.0 (Wikimedia Foundation)",
+        "attribution": "Text excerpts from Chinese Wikipedia, used for research; not redistributed in the repository.",
+        "articles": len(all_lines),
+        "chars": sum(len(line) for line in all_lines),
+        "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    MANIFEST_PATH.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[corpus] wrote {CORPUS_PATH} ({manifest['articles']} articles, {manifest['chars']} chars)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--articles", type=int, default=5000)

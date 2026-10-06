@@ -151,6 +151,68 @@ def class_distribution(rows: Sequence[Dict]) -> Dict[str, int]:
     return dict(counter)
 
 
+def local_sweep_metrics(predict_proba, rows, threshold: float, max_rows: int = 1200,
+                        pos_tolerance: int = 1, class_thresholds: Dict[str, float] | None = None,
+                        suppress: int = 4) -> Dict[str, float]:
+    """
+    Local end-to-end sweep with a realistic decision rule:
+      fire gate -> per-class confidence threshold -> rank by P(edit)*class_conf
+      -> greedy suppression (+-suppress chars) -> top-1 suggestion.
+    Reports whether the top-1 suggestion matches the true position/class.
+    """
+    from atoms import ATOM_CLASSES
+
+    evaluated = hits = class_hits = false_fires = fired = 0
+
+    for row in rows:
+        if evaluated >= max_rows:
+            break
+        if row["label"] == 0:
+            continue
+        document = row["left"] + row["span"] + row["right"]
+        true_pos = len(row["left"])
+        evaluated += 1
+
+        candidates = []
+        for pos in range(len(document)):
+            left = document[max(0, pos - 64):pos]
+            span = document[pos:pos + 1]
+            right = document[pos + 1:pos + 1 + 32]
+            probs = predict_proba(left, span, right)
+            edit_probability = float(1.0 - probs[0])
+            if edit_probability < threshold:
+                continue
+            class_index = int(np.argmax(probs))
+            if class_index == 0:
+                continue
+            confidence = float(probs[class_index])
+            if class_thresholds:
+                if confidence < class_thresholds.get(ATOM_CLASSES[class_index], 0.0):
+                    continue
+            candidates.append((edit_probability * confidence, pos, class_index))
+
+        if candidates:
+            fired += 1
+            candidates.sort(key=lambda item: -item[0])
+            score, pos, class_index = candidates[0]
+            # suppression is about picking the global best only; count fired once
+            if abs(pos - true_pos) <= pos_tolerance:
+                hits += 1
+                if class_index == row["label"]:
+                    class_hits += 1
+            else:
+                false_fires += 1
+
+    denominator = max(evaluated, 1)
+    return {
+        "n": evaluated,
+        "fired_rate": fired / denominator,
+        "hit_rate": hits / denominator,
+        "class_hit_rate": class_hits / denominator,
+        "false_fire_rate": false_fires / denominator,
+    }
+
+
 def write_report(
     path: Path,
     *,
@@ -159,6 +221,7 @@ def write_report(
     class_counts: Dict[str, Dict],
     grounding: Dict,
     latency_ms: Dict[str, float],
+    sweep: Dict[str, Dict] | None = None,
 ) -> None:
     lines: List[str] = []
     lines.append("# EFT / NES v0 - Evaluation Report\n")
@@ -206,6 +269,17 @@ def write_report(
         lines.append(f"- samples: {grounding.get('n')}")
         lines.append(f"- payload present in context window: {grounding.get('payload_in_window', 0):.4f}")
         lines.append(f"- payload groundable (doc or corpus): {grounding.get('payload_groundable', 0):.4f}")
+        lines.append("")
+
+    if sweep:
+        lines.append("## Local end-to-end sweep (gate fired at every position)\n")
+        lines.append("| model | n | fired | position hit (±1) | class hit | false fire |")
+        lines.append("|---|---|---|---|---|---|")
+        for name, metrics in sweep.items():
+            lines.append(
+                f"| {name} | {metrics['n']} | {metrics['fired_rate']:.3f} | "
+                f"{metrics['hit_rate']:.3f} | {metrics['class_hit_rate']:.3f} | {metrics['false_fire_rate']:.3f} |"
+            )
         lines.append("")
 
     if latency_ms:

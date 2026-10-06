@@ -1,25 +1,49 @@
 {
-  "generated_at": "2026-10-06T19:11:52+0800",
-  "corpus_articles": 2161,
-  "corpus_chars": 415554,
+  "generated_at": "2026-10-06T20:46:39+0800",
+  "corpus_articles": 8015,
+  "corpus_chars": 1520566,
   "sample_counts": {
-    "train": 65014,
-    "val": 553,
-    "test": 618
+    "train": 200000,
+    "val": 2150,
+    "test": 2203
   },
-  "docs_used": 12000,
+  "docs_used": 100000,
   "seed": 20261006,
   "device": "cuda",
   "feature_dim": 16384,
   "hdc_info": {
-    "train_seconds": 11.465442419052124,
+    "train_seconds": 41.84572792053223,
     "scale": 32.0
   },
   "thresholds": {
-    "hdc": 0.7502646446228027,
-    "softmax": 0.9073203802108765,
-    "markov": 1.0,
-    "prior": 0.5500046014785767
+    "hdc": 0.7470491528511047,
+    "softmax": 0.9195846319198608,
+    "markov": 0.8101449012756348,
+    "prior": 1.01
+  },
+  "class_thresholds": {
+    "FIX_CHAR": 0.9155267477035522,
+    "DEL_CHAR": 0.9961048364639282,
+    "INS_CHAR": 0.6749299764633179,
+    "DEL_SPAN": 0.9096453189849854,
+    "INS_SPAN_COPY": 0.9772104620933533,
+    "FMT_BULLET": 0.5
+  },
+  "sweep": {
+    "softmax": {
+      "n": 756,
+      "fired_rate": 0.9748677248677249,
+      "hit_rate": 0.17857142857142858,
+      "class_hit_rate": 0.16534391534391535,
+      "false_fire_rate": 0.7962962962962963
+    },
+    "hdc": {
+      "n": 300,
+      "fired_rate": 0.89,
+      "hit_rate": 0.06,
+      "class_hit_rate": 0.06,
+      "false_fire_rate": 0.83
+    }
   },
   "target_precision": 0.88
 }

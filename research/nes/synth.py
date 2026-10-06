@@ -398,7 +398,8 @@ def make_bullet_doc(rng: random.Random, doc: str) -> str:
 
 
 def build_samples(corpus: List[str], out_dir: Path, n_docs: int, seed: int,
-                  passes: int = 6, bullet_ratio: float = 0.35) -> Path:
+                  passes: int = 6, bullet_ratio: float = 0.35,
+                  max_train_samples: int = 200_000) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     synthesizer = Synthesizer(corpus, seed=seed)
     rng = random.Random(seed + 1)
@@ -441,6 +442,10 @@ def build_samples(corpus: List[str], out_dir: Path, n_docs: int, seed: int,
         return edits + no_edits
 
     train_samples = cap_no_edit(train_samples, 0.45)
+    if len(train_samples) > max_train_samples:
+        rng.shuffle(train_samples)
+        train_samples = train_samples[:max_train_samples]
+        print(f"[synth] train capped to {max_train_samples} samples", flush=True)
 
     print(
         f"[synth] docs={len(docs)} (train {len(train_docs)}x{passes}, val {len(val_docs)}, test {len(test_docs)}); "

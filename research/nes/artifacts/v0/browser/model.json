@@ -13,12 +13,12 @@
   "hdc_dim": 8192,
   "hdc_bins": 4096,
   "hdc_scale": 32.0,
-  "softmax_temperature": 1.25,
+  "softmax_temperature": 1.0,
   "gate_thresholds": {
-    "hdc": 0.7502646446228027,
-    "softmax": 0.9073203802108765,
-    "markov": 1.0,
-    "prior": 0.5500046014785767
+    "hdc": 0.7470491528511047,
+    "softmax": 0.9195846319198608,
+    "markov": 0.8101449012756348,
+    "prior": 1.01
   },
   "files": {
     "prototypes": "prototypes.bin",

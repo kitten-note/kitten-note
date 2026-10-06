@@ -31,6 +31,7 @@ from evaluate import (  # noqa: E402
     class_distribution,
     evaluate_model,
     grounding_rates,
+    local_sweep_metrics,
     write_report,
 )
 from features import FEATURE_DIM, FEATURE_VERSION, extract_feature_ids  # noqa: E402
@@ -239,6 +240,40 @@ def main() -> None:
         probs = predict_all(kind, model, features["test"], splits["test"])
         results[name] = evaluate_model(name, probs, features["test"]["labels"], threshold=thresholds[name])
 
+    # ---- per-class confidence thresholds (softmax, validation) ----
+    val_probs = predict_all("softmax", softmax, features["val"], splits["val"])
+    predicted = val_probs.argmax(axis=1)
+    labels_val = features["val"]["labels"]
+    class_thresholds = {}
+    for c in range(1, len(ATOM_CLASSES)):
+        mask = predicted == c
+        if mask.sum() < 20:
+            class_thresholds[ATOM_CLASSES[c]] = 0.50
+            continue
+        confidence = val_probs[mask, c]
+        correct = labels_val[mask] == c
+        order = np.argsort(-confidence)
+        cumulative = np.cumsum(correct[order])
+        precision = cumulative / np.arange(1, len(order) + 1)
+        ok = np.where(precision >= 0.9)[0]
+        class_thresholds[ATOM_CLASSES[c]] = (
+            float(confidence[order[int(ok[-1])]]) if len(ok) else float(confidence.max() + 0.01)
+        )
+    print("[thresholds] per-class: " + str({k: round(v, 3) for k, v in class_thresholds.items()}), flush=True)
+
+    # ---- local end-to-end sweep on held-out windows ----
+    def sweep_predictor(model):
+        return lambda left, span, right: model.predict_proba(extract_feature_ids(left, span, right))
+
+    sweep = {
+        "softmax": local_sweep_metrics(sweep_predictor(softmax), splits["test"], thresholds["softmax"],
+                                       max_rows=1200, class_thresholds=class_thresholds),
+        "hdc": local_sweep_metrics(sweep_predictor(hdc), splits["test"], thresholds["hdc"], max_rows=300),
+    }
+    for name, metrics in sweep.items():
+        print(f"[sweep] {name}: hit={metrics['hit_rate']:.3f} class={metrics['class_hit_rate']:.3f} "
+              f"false_fire={metrics['false_fire_rate']:.3f}", flush=True)
+
     # ---- grounding check ----
     index = build_index_from_lines(corpus)
     grounding = grounding_rates(splits["test"], index)
@@ -277,11 +312,14 @@ def main() -> None:
         "feature_dim": FEATURE_DIM,
         "hdc_info": hdc_info,
         "thresholds": thresholds,
+        "class_thresholds": class_thresholds,
+        "sweep": sweep,
         "target_precision": args.target_precision,
     }
     (art_dir / "config.json").write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     (art_dir / "metrics.json").write_text(
-        json.dumps({"results": results, "grounding": grounding, "latency_ms": latency}, ensure_ascii=False, indent=2),
+        json.dumps({"results": results, "grounding": grounding, "latency_ms": latency, "sweep": sweep},
+                   ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     write_report(
@@ -291,6 +329,7 @@ def main() -> None:
         class_counts={k: class_distribution(v) for k, v in splits.items()},
         grounding=grounding,
         latency_ms=latency,
+        sweep=sweep,
     )
 
     print("\n===== EFT / NES v0 summary =====", flush=True)
