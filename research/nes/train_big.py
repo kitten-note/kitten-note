@@ -30,6 +30,33 @@ def shard_paths(split: str) -> List[Path]:
     return sorted((SHARDS / split).glob("part-*.npz"))
 
 
+def load_shard(path: Path):
+    """Load a shard with integrity validation; returns None when unusable."""
+    try:
+        with np.load(path) as data:
+            ids = data["ids"]
+            offsets = data["offsets"]
+            labels = data["labels"]
+    except Exception as error:  # noqa: BLE001
+        print(f"[train-256m] cannot load {path.name}: {error}; skipping", flush=True)
+        return None
+    if len(labels) == 0 or len(ids) == 0:
+        return None
+    if ids.dtype != np.uint32:
+        ids = ids.astype(np.uint32)
+    if int(ids.max()) >= (1 << 23):
+        print(f"[train-256m] {path.name}: ids out of range (max {int(ids.max())}); skipping", flush=True)
+        return None
+    if int(offsets[0]) != 0 or int(offsets[-1]) >= len(ids):
+        print(f"[train-256m] {path.name}: bad offsets (first {int(offsets[0])}, "
+              f"last {int(offsets[-1])}, ids {len(ids)}); skipping", flush=True)
+        return None
+    if not np.all(np.diff(offsets.astype(np.int64)) >= 0):
+        print(f"[train-256m] {path.name}: non-monotonic offsets; skipping", flush=True)
+        return None
+    return ids, offsets, labels
+
+
 def count_samples(paths: List[Path]) -> int:
     total = 0
     for path in paths:
@@ -56,10 +83,10 @@ def batches(paths: List[Path], batch_size: int, rng: np.random.Generator,
         buffer_ids: List[np.ndarray] = []
         buffer_labels: List[int] = []
         for path in order:
-            with np.load(path) as data:
-                ids = data["ids"]
-                offsets = data["offsets"]
-                labels = data["labels"]
+            shard = load_shard(path)
+            if shard is None:
+                continue
+            ids, offsets, labels = shard
             ends = np.append(offsets[1:], len(ids))
             for index in rng.permutation(len(labels)):
                 buffer_ids.append(ids[int(offsets[index]):int(ends[index])])
