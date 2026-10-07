@@ -1,14 +1,14 @@
 {
   "parameters": 260047072,
-  "steps": 3680,
-  "samples": 60268420,
-  "training_minutes": 2.0000495592753094,
+  "steps": 132800,
+  "samples": 0,
+  "training_minutes": 1.1523564656575521e-07,
   "steps_per_epoch": null,
   "eval": {
     "n": 62915,
-    "top1": 0.8967177938488436,
-    "edit_top1": 0.7208323012137726,
-    "gate_auc": 0.9632498986527673
+    "top1": 0.9093062067869347,
+    "edit_top1": 0.7620014862521675,
+    "gate_auc": 0.9731485317100462
   },
   "int8_export": {
     "int8_bytes": 276824064,

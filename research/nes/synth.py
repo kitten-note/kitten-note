@@ -355,6 +355,20 @@ class Synthesizer:
             "kind": "edit",
         }
 
+    def _geometry_window(self, noisy: str, pos: int, span_len: int) -> Dict:
+        """A NO_EDIT window with a specific span geometry (kills geometry leakage)."""
+        left = noisy[max(0, pos - LEFT_WINDOW):pos]
+        span = noisy[pos:pos + span_len]
+        right = noisy[pos + span_len:pos + span_len + RIGHT_WINDOW]
+        return {
+            "left": left,
+            "span": span,
+            "right": right,
+            "atom": make_atom("NO_EDIT"),
+            "label": CLASS_TO_ID["NO_EDIT"],
+            "kind": "no_edit",
+        }
+
     def _no_edit_samples(self, noisy: str, edit_spans: List[Tuple[int, int]], n_edits: int) -> List[Dict]:
         out: List[Dict] = []
         if len(noisy) < LEFT_WINDOW + RIGHT_WINDOW + 8:
@@ -374,6 +388,9 @@ class Synthesizer:
                 return pos
             return None
 
+        def clear(pos: int) -> bool:
+            return all(not (s - 2 <= pos <= e + 2) for s, e in edit_spans)
+
         n_near = min(n_edits + 1, 3)
         for _ in range(n_near):
             pos = near_miss()
@@ -383,9 +400,27 @@ class Synthesizer:
         n_random = self.rng.choices([2, 3, 4], weights=[0.4, 0.4, 0.2])[0]
         for _ in range(n_random):
             pos = self.rng.randint(LEFT_WINDOW, len(noisy) - RIGHT_WINDOW - 1)
-            if any(s - 2 <= pos <= e + 2 for s, e in edit_spans):
+            if not clear(pos):
                 continue
             out.append(self._window(noisy, make_atom("NO_EDIT"), pos))
+
+        # Geometry-matched negatives: empty-span and multi-char-span windows at
+        # clean positions. Without these, span length alone predicts the label
+        # (every empty/multi-char span in the data was an edit), which breaks
+        # candidate-sweep localisation at inference time.
+        for _ in range(2):
+            pos = self.rng.randint(LEFT_WINDOW, len(noisy) - RIGHT_WINDOW - 1)
+            if not clear(pos):
+                continue
+            out.append(self._geometry_window(noisy, pos, span_len=0))
+        for _ in range(2):
+            width = self.rng.choice([2, 3, 4])
+            if len(noisy) < LEFT_WINDOW + RIGHT_WINDOW + width + 8:
+                continue
+            pos = self.rng.randint(LEFT_WINDOW, len(noisy) - RIGHT_WINDOW - width - 1)
+            if not clear(pos):
+                continue
+            out.append(self._geometry_window(noisy, pos, span_len=width))
         return out
 
 

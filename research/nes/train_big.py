@@ -170,6 +170,10 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=3e-3)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--max-epochs", type=int, default=4)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--max-steps", type=int, default=0)
+    parser.add_argument("--out-dir", default="")
+    parser.add_argument("--class-weight-mode", default="full", choices=["full", "sqrt", "none"])
     args = parser.parse_args()
 
     device = args.device if torch.cuda.is_available() else "cpu"
@@ -179,12 +183,20 @@ def main() -> None:
         raise SystemExit("no training shards; run big_data.build() first")
 
     train_total = count_samples(train_paths)
-    ART.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(args.out_dir) if args.out_dir else ART
+    out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[train-256m] train samples {train_total:,} across {len(train_paths)} shards; device {device}", flush=True)
 
     model = BigEditPredictor().to(device)
     params = model.parameter_count()
     print(f"[train-256m] parameters: {params:,}", flush=True)
+
+    step = 0
+    if args.resume and (out_dir / "checkpoint.pt").exists():
+        checkpoint = torch.load(out_dir / "checkpoint.pt", map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint["model"])
+        step = int(checkpoint.get("step", 0))
+        print(f"[train-256m] resumed from checkpoint at step {step}", flush=True)
 
     embedding_optimizer = torch.optim.SparseAdam(list(model.embedding.parameters()), lr=args.lr)
     head_optimizer = torch.optim.AdamW(list(model.head.parameters()), lr=args.lr, weight_decay=1e-4)
@@ -197,35 +209,46 @@ def main() -> None:
     if class_counts:
         counts = np.array([class_counts.get(c, 1) for c in range(7)], dtype=np.float64)
         weights = counts.sum() / np.maximum(counts, 1)
+        if args.class_weight_mode == "sqrt":
+            weights = np.sqrt(weights)
+        elif args.class_weight_mode == "none":
+            weights = np.ones_like(weights)
         weights = weights / weights.mean()
         class_weights = torch.tensor(weights, dtype=torch.float32, device=device)
         criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
-        print(f"[train-256m] class weights: {np.round(weights, 2).tolist()}", flush=True)
+        print(f"[train-256m] class weights ({args.class_weight_mode}): {np.round(weights, 2).tolist()}", flush=True)
 
     deadline = time.time() + args.minutes * 60
     rng = np.random.default_rng(20261007)
-    step = seen = 0
+    seen = 0
     loss_ema = None
     history = []
     started = time.time()
 
     for epoch in range(args.max_epochs):
-        if time.time() > deadline:
+        if time.time() > deadline or (args.max_steps and step >= args.max_steps):
             break
         for flat, offsets, labels in batches(train_paths, args.batch, rng):
-            if time.time() > deadline:
+            if time.time() > deadline or (args.max_steps and step >= args.max_steps):
                 break
             model.train()
             ids_t = torch.from_numpy(flat).to(device, non_blocking=True)
             off_t = torch.from_numpy(offsets).to(device, non_blocking=True)
             labels_t = torch.from_numpy(labels).to(device, non_blocking=True)
-            embedding_optimizer.zero_grad(set_to_none=True)
-            head_optimizer.zero_grad(set_to_none=True)
-            logits = model(ids_t, off_t)
-            loss = criterion(logits, labels_t)
-            loss.backward()
-            embedding_optimizer.step()
-            head_optimizer.step()
+            try:
+                embedding_optimizer.zero_grad(set_to_none=True)
+                head_optimizer.zero_grad(set_to_none=True)
+                logits = model(ids_t, off_t)
+                loss = criterion(logits, labels_t)
+                loss.backward()
+                embedding_optimizer.step()
+                head_optimizer.step()
+            except Exception as error:  # noqa: BLE001
+                print(f"[train-256m] CRASH at step {step}: {error}", flush=True)
+                print(f"    batch: ids={flat.shape[0]} min={int(flat.min())} max={int(flat.max())} "
+                      f"offsets={offsets.shape[0]} first={int(offsets[0])} last={int(offsets[-1])} "
+                      f"labels={np.bincount(labels, minlength=7).tolist()}", flush=True)
+                raise
 
             step += 1
             seen += len(labels)
@@ -239,11 +262,11 @@ def main() -> None:
                       f"({rate:.0f} samples/s)", flush=True)
 
             if step % 400 == 0:
-                torch.save({"model": model.state_dict(), "step": step, "seen": seen}, ART / "checkpoint.pt")
+                torch.save({"model": model.state_dict(), "step": step, "seen": seen}, out_dir / "checkpoint.pt")
                 print(f"[train-256m] checkpoint saved at step {step}", flush=True)
 
     training_minutes = (time.time() - started) / 60
-    torch.save({"model": model.state_dict(), "step": step, "seen": seen}, ART / "model.pt")
+    torch.save({"model": model.state_dict(), "step": step, "seen": seen}, out_dir / "model.pt")
     print(f"[train-256m] training done: {step} steps, {seen:,} samples, {training_minutes:.1f} min", flush=True)
 
     metrics = {"parameters": params, "steps": step, "samples": seen, "training_minutes": training_minutes, "steps_per_epoch": None}
@@ -252,9 +275,9 @@ def main() -> None:
         metrics["eval"] = eval_metrics
         print(f"[train-256m] eval: {eval_metrics}", flush=True)
 
-    export_info = export_int8(model, ART)
+    export_info = export_int8(model, out_dir)
     metrics["int8_export"] = export_info
-    (ART / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
 
     report = [
         "# EFT / NES - 256M-parameter predictor",
@@ -268,8 +291,8 @@ def main() -> None:
         "  outputs the same 7 typed atoms and passes the same type checker / copy-only grounding layer as v0.",
         "",
     ]
-    (ART / "REPORT.md").write_text("\n".join(report), encoding="utf-8")
-    print(f"[train-256m] artifacts: {ART}", flush=True)
+    (out_dir / "REPORT.md").write_text("\n".join(report), encoding="utf-8")
+    print(f"[train-256m] artifacts: {out_dir}", flush=True)
 
 
 if __name__ == "__main__":

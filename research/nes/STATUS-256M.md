@@ -1,8 +1,14 @@
-# EFT / NES 256M run - status
-- finished: 2026-10-06T21:33:15+0800
-- wall clock: 88.6 min
-- parameters: 260,047,072
-- training: 581600 steps / 973,160,890 samples / 80.0 min
-- eval: {'n': 3240, 'top1': 0.8867283950617284, 'edit_top1': 0.7735470941883767, 'gate_auc': 0.9612498860343345}
-- int8 export: {'int8_bytes': 276824064, 'rows': 8388608, 'dim': 31}
-- artifacts: artifacts/big/ (model.pt, embedding_int8.npz, REPORT.md, metrics.json)
+# EFT / NES 256M — 最终状态
+
+- **模型**：260,047,072 参数（E: 8,388,608×31 + 头），从零训练，单次前向、无注意力、无自回归；输出 7 类类型化原子，发射过类型判定与 copy-only 接地层。
+- **最佳产物**：`artifacts/big-3ep-geo/`
+  - `model.pt`（992 MB，fp32）
+  - `embedding_int8.npz`（264 MB，int8 + 行缩放，可端侧分发格式）
+  - `metrics.json` / `REPORT.md` / `candidate_sweep.json`
+- **数据**：1.617 亿字符中文语料（pleisto 维基中文 + 既有 wiki API 语料）+ 20 万条真实拼写纠错对（CSC）；几何平衡合成样本 508 万（train+val，含空 span / 多字 span 干净负样本）。
+- **训练**：900 步 × batch 16,384 = 1,472 万样本（≈4 epoch），sqrt 类权重，SparseAdam + AdamW，A2000。
+- **指标（val，10 万样本）**：top1 0.9097 / edit-top1 0.6485 / gate AUC 0.9440。
+- **扫掠（类型化候选，400 留出窗口）**：position top-1 **23.25%** / class top-1 22.25%。
+- **对照矩阵（扫掠 position top-1）**：700 轮 2.75% → 全权重 3 轮 5.75% → 无权重 3 轮 4.0% → **几何平衡 3 轮 23.25%**。
+- **关键发现（论文 §5）**：概率饱和破坏排序假象（改编辑 log-odds 排名）、候选几何失配（类型化候选生成）、合成数据几何泄漏（几何平衡负样本）——详见研究笔记 §10.7。
+- **已知局限**：INS 类（缺失标点 / 漏短语）命中 ~5%；int8 表 264 MB 暂不适配浏览器端（端上继续用 v0 小模型，两套共用同一类型系统与接地层）。

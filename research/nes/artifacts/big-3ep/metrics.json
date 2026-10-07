@@ -1,0 +1,18 @@
+{
+  "parameters": 260047072,
+  "steps": 600,
+  "samples": 9826500,
+  "training_minutes": 0.626464557647705,
+  "steps_per_epoch": null,
+  "eval": {
+    "n": 62915,
+    "top1": 0.9207343240880553,
+    "edit_top1": 0.8111964329947982,
+    "gate_auc": 0.98010646430418
+  },
+  "int8_export": {
+    "int8_bytes": 276824064,
+    "rows": 8388608,
+    "dim": 31
+  }
+}

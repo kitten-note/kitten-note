@@ -1,0 +1,46 @@
+{
+  "model": "artifacts/big-3ep-geo/model.pt",
+  "windows": 400,
+  "position_top1": 0.2325,
+  "class_top1": 0.2225,
+  "per_class_hits": {
+    "FIX_CHAR": {
+      "hit": 47,
+      "total": 177
+    },
+    "DEL_CHAR": {
+      "hit": 10,
+      "total": 65
+    },
+    "INS_CHAR": {
+      "hit": 3,
+      "total": 43
+    },
+    "DEL_SPAN": {
+      "hit": 26,
+      "total": 51
+    },
+    "INS_SPAN_COPY": {
+      "hit": 2,
+      "total": 54
+    },
+    "FMT_BULLET": {
+      "hit": 1,
+      "total": 10
+    }
+  },
+  "best_candidate_type_distribution": {
+    "char": 265,
+    "ins": 91,
+    "del2": 13,
+    "del3": 23,
+    "del4": 8
+  },
+  "per_type_median_edit_logodds": {
+    "char": -8.583604917534078,
+    "ins": -4.587514122629872,
+    "del2": -10.45510777333486,
+    "del3": -10.327325074959315,
+    "del4": -11.135918344916325
+  }
+}

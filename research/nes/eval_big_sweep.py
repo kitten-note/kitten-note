@@ -1,12 +1,21 @@
 """
-Sweep evaluation for the 256M-parameter predictor.
+Sweep evaluation for the 256M-parameter predictor - v3.
 
-Loads artifacts/big/model.pt, derives gate + per-class thresholds from the
-validation shards, then runs the corrected local-sweep rule on the held-out
-test windows (data/samples/test.jsonl) to quantify the localisation bottleneck
-at 260M parameters.
+Why v3: the trained model saturates (training loss ~0.0000), so softmax
+probabilities collapse to exactly 1.0 / 0.0 in float32. Ranking candidate
+positions by P(edit) then breaks ties arbitrarily (max() picks the leftmost),
+which invalidates the earlier sweep numbers. v3 ranks by the *edit log-odds*:
 
-Usage: python eval_big_sweep.py [--rows 400]
+    score(pos) = logsumexp(logits[1:]) - logits[0]
+
+which is monotone in P(edit) but never saturates, so ties disappear.
+
+Reports:
+  * saturation diagnostics (how many positions have P(edit) == 1.0 exactly)
+  * threshold-free localisation: rank@argmax on held-out windows
+  * operating point tuned on a disjoint split of windows (log-odds quantiles)
+
+Usage: python eval_big_sweep.py [--rows 400] [--tune-rows 200]
 """
 from __future__ import annotations
 
@@ -21,15 +30,11 @@ import torch
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from atoms import ATOM_CLASSES  # noqa: E402
 from big_model import BigEditPredictor  # noqa: E402
-from big_data import NUM_FEATURES, _hash_ids  # noqa: E402
-from evaluate import local_sweep_metrics  # noqa: E402
-from predictors import tune_gate_threshold  # noqa: E402
+from big_data import _hash_ids  # noqa: E402
 from synth import load_samples  # noqa: E402
 
 ART = BASE / "artifacts" / "big"
-SHARDS = BASE / "data" / "shards"
 
 
 def load_model(device: str) -> BigEditPredictor:
@@ -40,60 +45,49 @@ def load_model(device: str) -> BigEditPredictor:
     return model
 
 
-def probs_for(model, device, left: str, span: str, right: str) -> np.ndarray:
+def logits_for(model, device: str, left: str, span: str, right: str) -> np.ndarray:
     ids = _hash_ids(left, span, right).astype(np.int64)
     with torch.no_grad():
         ids_t = torch.from_numpy(ids).to(device)
         offsets = torch.zeros(1, dtype=torch.long, device=device)
         logits = model(ids_t, offsets)
-        return torch.softmax(logits, dim=-1).cpu().numpy()[0]
+        return logits.cpu().numpy()[0].astype(np.float64)
 
 
-def thresholds_from_val(model, device, max_samples: int = 60000):
-    """Gate + per-class thresholds from the validation shards."""
-    edit_scores, is_edit, class_conf, class_pred, class_true = [], [], [], [], []
-    seen = 0
-    for path in sorted((SHARDS / "val").glob("part-*.npz")):
-        with np.load(path) as data:
-            ids, offsets, labels = data["ids"], data["offsets"], data["labels"]
-        id_offsets = np.append(offsets, len(ids))
-        for index in range(len(labels)):
-            if seen >= max_samples:
-                break
-            start, end = int(id_offsets[index]), int(id_offsets[index + 1])
-            ids_t = torch.from_numpy(ids[start:end].astype(np.int64)).to(device)
-            with torch.no_grad():
-                logits = model(ids_t, torch.zeros(1, dtype=torch.long, device=device))
-                probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
-            prediction = int(np.argmax(probs))
-            edit_scores.append(float(1.0 - probs[0]))
-            is_edit.append(int(labels[index]) != 0)
-            class_conf.append(float(probs[prediction]))
-            class_pred.append(prediction)
-            class_true.append(int(labels[index]))
-            seen += 1
-        if seen >= max_samples:
-            break
+def edit_logodds(logits: np.ndarray) -> float:
+    """logsumexp(edit classes) - logit(NO_EDIT): unsaturated P(edit) proxy."""
+    a = logits[1:]
+    m = float(a.max())
+    lse = m + float(np.log(np.exp(a - m).sum()))
+    return lse - float(logits[0])
 
-    gate = tune_gate_threshold(edit_scores, is_edit, 0.88)
-    class_thresholds = {}
-    pred_arr = np.asarray(class_pred)
-    conf_arr = np.asarray(class_conf)
-    true_arr = np.asarray(class_true)
-    for class_index in range(1, len(ATOM_CLASSES)):
-        mask = pred_arr == class_index
-        if mask.sum() < 20:
-            class_thresholds[ATOM_CLASSES[class_index]] = 0.5
-            continue
-        confidence = conf_arr[mask]
-        correct = true_arr[mask] == class_index
-        order = np.argsort(-confidence)
-        precision = np.cumsum(correct[order]) / np.arange(1, len(order) + 1)
-        ok = np.where(precision >= 0.9)[0]
-        class_thresholds[ATOM_CLASSES[class_index]] = (
-            float(confidence[order[int(ok[-1])]]) if len(ok) else float(confidence.max() + 0.01)
-        )
-    return gate, class_thresholds
+
+def collect_windows(model, device: str, rows) -> list:
+    windows = []
+    for row in rows:
+        document = row["left"] + row["span"] + row["right"]
+        true_pos = len(row["left"])
+        scores = []
+        for pos in range(len(document)):
+            left = document[max(0, pos - 64):pos]
+            span = document[pos:pos + 1]
+            right = document[pos + 1:pos + 1 + 32]
+            logits = logits_for(model, device, left, span, right)
+            scores.append((edit_logodds(logits), int(np.argmax(logits)), pos))
+        windows.append((true_pos, int(row["label"]), scores))
+    return windows
+
+
+def rank_accuracy(windows) -> dict:
+    position_top1 = class_top1 = 0
+    for true_pos, label, scores in windows:
+        _, class_index, pos = max(scores, key=lambda item: item[0])
+        if abs(pos - true_pos) <= 1:
+            position_top1 += 1
+            if class_index == label:
+                class_top1 += 1
+    n = max(len(windows), 1)
+    return {"n": len(windows), "position_top1": position_top1 / n, "class_top1": class_top1 / n}
 
 
 def main() -> None:
@@ -104,25 +98,91 @@ def main() -> None:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--rows", type=int, default=400)
+    parser.add_argument("--tune-rows", type=int, default=200)
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_model(device)
-    gate, class_thresholds = thresholds_from_val(model, device)
-    print(f"[big-sweep] gate: {json.dumps(gate)}")
-    print(f"[big-sweep] class thresholds: {json.dumps({k: round(v, 3) for k, v in class_thresholds.items()})}")
 
     rows = load_samples(BASE / "data" / "samples" / "test.jsonl")
-    predict = lambda left, span, right: probs_for(model, device, left, span, right)
+    edit_rows = [row for row in rows if row["label"] != 0][: args.tune_rows + args.rows]
+    tune_rows = edit_rows[: args.tune_rows]
+    eval_rows = edit_rows[args.tune_rows:]
+    print(f"[big-sweep] tune windows {len(tune_rows)}, eval windows {len(eval_rows)}", flush=True)
 
-    result = local_sweep_metrics(predict, rows, gate["threshold"], max_rows=args.rows,
-                                 class_thresholds=class_thresholds)
-    print(f"[big-sweep] result: {json.dumps({k: round(v, 4) for k, v in result.items()})}")
+    tune_windows = collect_windows(model, device, tune_rows)
+    eval_windows = collect_windows(model, device, eval_rows)
+
+    # saturation diagnostics
+    total = saturated = 0
+    for _true, _label, scores in eval_windows:
+        for _score, _class, _pos in scores:
+            total += 1
+    # recompute saturation from raw margins is not stored; approximate via log-odds
+    extreme = sum(1 for _t, _l, ss in eval_windows for s, _c, _p in ss if s > 20.0)
+    print(f"[big-sweep] positions {total}, edit-log-odds > 20 (saturated fire): {extreme} "
+          f"({extreme / max(total, 1):.3%})", flush=True)
+
+    rank = rank_accuracy(eval_windows)
+    print(f"[big-sweep] rank@argmax (edit log-odds): {json.dumps(rank)}", flush=True)
+
+    all_scores = np.array([s for _t, _l, ss in tune_windows for s, _c, _p in ss])
+    grid = [float(np.quantile(all_scores, q)) for q in (0.90, 0.95, 0.98, 0.99, 0.995, 0.999)]
+
+    best = None
+    for threshold in grid:
+        hits = false_fires = fired = 0
+        for true_pos, label, scores in tune_windows:
+            candidates = [item for item in scores if item[0] >= threshold and item[1] != 0]
+            if not candidates:
+                continue
+            fired += 1
+            _, _, pos = max(candidates, key=lambda item: item[0])
+            if abs(pos - true_pos) <= 1:
+                hits += 1
+            else:
+                false_fires += 1
+        n = max(len(tune_windows), 1)
+        hit_rate = hits / n
+        false_rate = false_fires / n
+        objective = hit_rate - false_rate
+        if best is None or objective > best["objective"]:
+            best = {"threshold": threshold, "hit_rate": hit_rate, "false_fire_rate": false_rate,
+                    "fired_rate": fired / n, "objective": objective}
+    print(f"[big-sweep] tuned operating point: {json.dumps({k: round(v, 4) for k, v in best.items()})}",
+          flush=True)
+
+    hits = false_fires = fired = class_hits = 0
+    for true_pos, label, scores in eval_windows:
+        candidates = [item for item in scores if item[0] >= best["threshold"] and item[1] != 0]
+        if not candidates:
+            continue
+        fired += 1
+        _, class_index, pos = max(candidates, key=lambda item: item[0])
+        if abs(pos - true_pos) <= 1:
+            hits += 1
+            if class_index == label:
+                class_hits += 1
+        else:
+            false_fires += 1
+    n = max(len(eval_windows), 1)
+    tuned_eval = {
+        "n": len(eval_windows),
+        "threshold_logodds": best["threshold"],
+        "fired_rate": fired / n,
+        "hit_rate": hits / n,
+        "class_hit_rate": class_hits / n,
+        "false_fire_rate": false_fires / n,
+    }
+    print(f"[big-sweep] tuned eval: {json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in tuned_eval.items()})}",
+          flush=True)
 
     (ART / "sweep.json").write_text(json.dumps({
-        "gate": gate,
-        "class_thresholds": class_thresholds,
-        "sweep": result,
+        "ranking": "edit_logodds = logsumexp(logits[1:]) - logits[0]",
+        "saturation_fire_rate": extreme / max(total, 1),
+        "rank_no_threshold": rank,
+        "tuned_operating_point": best,
+        "tuned_eval": tuned_eval,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[big-sweep] wrote {ART / 'sweep.json'}")
 

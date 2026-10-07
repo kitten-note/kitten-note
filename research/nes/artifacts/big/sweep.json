@@ -1,23 +1,24 @@
 {
-  "gate": {
-    "threshold": 0.8537710905075073,
-    "precision": 0.8803695150115474,
-    "recall": 0.8176748176748176,
-    "coverage": 0.28404618210443455
-  },
-  "class_thresholds": {
-    "FIX_CHAR": 0.9998534917831421,
-    "DEL_CHAR": 0.51639723777771,
-    "INS_CHAR": 0.9999943971633911,
-    "DEL_SPAN": 0.998593270778656,
-    "INS_SPAN_COPY": 0.9999998807907104,
-    "FMT_BULLET": 0.5
-  },
-  "sweep": {
+  "ranking": "edit_logodds = logsumexp(logits[1:]) - logits[0]",
+  "saturation_fire_rate": 0.01540990343127183,
+  "rank_no_threshold": {
     "n": 400,
-    "fired_rate": 0.955,
-    "hit_rate": 0.1725,
-    "class_hit_rate": 0.1475,
-    "false_fire_rate": 0.7825
+    "position_top1": 0.1,
+    "class_top1": 0.09
+  },
+  "tuned_operating_point": {
+    "threshold": 41.00009825138073,
+    "hit_rate": 0.015,
+    "false_fire_rate": 0.07,
+    "fired_rate": 0.085,
+    "objective": -0.05500000000000001
+  },
+  "tuned_eval": {
+    "n": 400,
+    "threshold_logodds": 41.00009825138073,
+    "fired_rate": 0.1,
+    "hit_rate": 0.01,
+    "class_hit_rate": 0.01,
+    "false_fire_rate": 0.09
   }
 }

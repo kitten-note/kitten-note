@@ -1,9 +1,9 @@
 # EFT / NES - 256M-parameter predictor
 
 - parameters: **260,047,072** (E: 8,388,608 x 31 + head)
-- training: 132800 steps / 0 samples / 0.0 min on cuda
+- training: 600 steps / 9,826,500 samples / 0.6 min on cuda
 - data: 3,128,044 train samples (shards), val 62,915
-- eval: {'n': 62915, 'top1': 0.9093062067869347, 'edit_top1': 0.7620014862521675, 'gate_auc': 0.9731485317100462}
+- eval: {'n': 62915, 'top1': 0.918747516490503, 'edit_top1': 0.780728263562051, 'gate_auc': 0.9813434019893564}
 - int8 export: {'int8_bytes': 276824064, 'rows': 8388608, 'dim': 31}
 - paradigm: single forward propagation (embedding-bag + linear), no attention, no autoregression;
   outputs the same 7 typed atoms and passes the same type checker / copy-only grounding layer as v0.

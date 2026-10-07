@@ -5,5 +5,5 @@ __pycache__/
 run-*.log
 
 # Heavy 256M-run weights are not committed (reports stay).
-artifacts/big/*.pt
-artifacts/big/*.npz
+artifacts/big*/*.pt
+artifacts/big*/*.npz
