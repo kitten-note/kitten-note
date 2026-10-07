@@ -304,11 +304,12 @@ kitten-note/
     ├── qrcode/             # 二维码生成与识别
     ├── mathjax/            # MathJax tex-svg-full（Apache-2.0，离线公式渲染）
     ├── fonts/              # Noto Sans SC 子集（OFL 1.1，PDF 内嵌字体）
-    ├── transformers.js/    # 浏览器端推理框架（含ONNX Runtime）
-    └── nes-model/          # NES模型元数据（config/tokenizer等）
+    ├── transformers.js/    # 浏览器端推理框架（含ONNX Runtime，API模式备用）
+    ├── nes-model/          # （旧）ONNX 模型元数据
+    └── eft/                # 内置 NES 预测器（EFT v0：运行时 + 权重 + 字符表）
 ```
 
-> **关于 NES 模型权重**：仓库只包含 `assets/nes-model/` 下的模型元数据（配置、分词器等）。ONNX 权重**不随仓库分发**，需要放在 `assets/nes-model/onnx/model_q4.onnx`，或直接使用应用内的模型下载按钮获取。模型许可说明见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+> **关于 NES**：本地模式使用内置的 **EFT v0 预测器**（`assets/eft/`，约 6MB，随仓库分发、零下载、数据不出设备）；API 模式保留 OpenAI 兼容接口（也可用于标题生成）。旧的 ONNX 文本补全路径已停用。模型与语料许可说明见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 
 ### 开发工作流
 

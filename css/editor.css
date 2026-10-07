@@ -221,6 +221,53 @@
     pointer-events: none;
 }
 
+/* EFT edit suggestion card */
+.eft-suggestion-card {
+    position: fixed;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 340px;
+    padding: 8px 10px;
+    background: var(--bg-secondary, #ffffff);
+    color: var(--text-primary, #333333);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.eft-suggestion-card.hidden {
+    display: none;
+}
+
+.eft-suggestion-text {
+    flex: 1;
+}
+
+.eft-suggestion-accept,
+.eft-suggestion-dismiss {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-muted, #888888);
+}
+
+.eft-suggestion-accept:hover {
+    background: var(--primary-bg, #e8f5e9);
+    color: var(--primary-dark, #2e7d32);
+}
+
+.eft-suggestion-dismiss:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
 /* Selection Highlight */
 .text-content ::selection {
     background: var(--primary-bg);

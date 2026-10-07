@@ -449,6 +449,15 @@ v1 的三个工程缺陷（v2 已修复）：
 
 **产物**：`artifacts/big-3ep-geo/`（model.pt 992MB / embedding_int8.npz 264MB / metrics.json / REPORT.md / candidate_sweep.json）；对照模型 `artifacts/big-3ep/`、`artifacts/big-3ep-noweight/`。
 
+## 11. 应用集成：v0 预测器落地（2026-10-07）
+
+- **`assets/eft/`**：浏览器 bundle（`eft.mjs` 运行时 + softmax/prototypes/base + `content.json` 字符表，约 6MB），金标向量 200/200 逐位对齐（`browser/test_infer.mjs`）。
+- **`js/eft-engine.js`**：类型化候选扫掠 + 逐类阈值 + copy-only 内容层 + `apply_atom` 镜像类型检查。v0 仅启用 **FIX_CHAR / DEL_CHAR / INS_CHAR / DEL_SPAN**；**FMT_BULLET 与 INS_SPAN_COPY 属结构操作，暂禁用**——它们作为局部窗口分类器会系统性误报（§10.7 的几何泄漏教训；行首乱加"- "就是症状）。
+- **`js/nes.js`**：本地模式 = EFT（建议卡片：Tab 接受 / Esc 忽略 / 按钮接受忽略）；API 模式保留（文本续写 + 标题生成）。
+- **编辑器**：新增 `applyPlainTextEdit`（按纯文本区间用 Range 手术应用编辑）。
+- **冒烟测试** `research/nes/browser/test_app_engine.mjs`：120 个留出样本 → 59 触发、**59/59 通过类型检查**、26 类命中（≈44%）。
+- **已知限制（诚实口径）**：文本 < 24 字直接跳过（分布外）；DEL_SPAN 采用 ≤4 字有界词块（v0 的"自然边界扩展"会吞长句，已修）；总体命中率仍是研究阶段水平（合成留出集 23%，应用里默认保守阈值，宁缺勿滥）。
+
 ---
 
 ### 8.7 下一步（v0.1 → 论文版）

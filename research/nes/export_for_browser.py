@@ -66,6 +66,7 @@ def main() -> None:
         "hdc_scale": hdc.scale,
         "softmax_temperature": softmax.temperature,
         "gate_thresholds": config.get("thresholds", {}),
+        "class_thresholds": config.get("class_thresholds", {}),
         "files": {
             "prototypes": "prototypes.bin",
             "base": "base.bin",
@@ -73,7 +74,36 @@ def main() -> None:
         },
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 3) golden vectors ----------------------------------------------------
+    # 3) content tables (browser content layer: propose_next from char n-grams)
+    from collections import Counter, defaultdict  # noqa: E402
+
+    from corpus import load_corpus  # noqa: E402
+
+    text = "\n".join(load_corpus())
+    uni: dict = defaultdict(Counter)
+    bi: dict = defaultdict(Counter)
+    for index in range(len(text)):
+        if index + 1 < len(text) and text[index + 1] != "\n":
+            uni[text[index]][text[index + 1]] += 1
+        if index + 2 < len(text) and text[index + 2] != "\n":
+            bi[text[index:index + 2]][text[index + 2]] += 1
+
+    def prune(table, min_total: int, top: int, max_keys: int) -> dict:
+        items = [(key, counts) for key, counts in table.items() if sum(counts.values()) >= min_total]
+        items.sort(key=lambda item: -sum(item[1].values()))
+        items = items[:max_keys]
+        return {
+            key: "".join(char for char, count in counts.most_common(top) if count >= 2)
+            for key, counts in items
+        }
+
+    content = {
+        "uni": prune(uni, 3, 5, 4000),
+        "bi": prune(bi, 2, 3, 20000),
+    }
+    (OUT / "content.json").write_text(json.dumps(content, ensure_ascii=False), encoding="utf-8")
+
+    # 4) golden vectors ----------------------------------------------------
     rows = []
     with SAMPLES.open("r", encoding="utf-8") as handle:
         for line in handle:

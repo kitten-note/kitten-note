@@ -32,7 +32,25 @@ sys.path.insert(0, str(BASE))
 from atoms import ATOM_CLASSES, apply_atom  # noqa: E402
 from big_data import _hash_ids  # noqa: E402
 from big_model import BigEditPredictor  # noqa: E402
-from demo import load_content_index, resolve_atom  # noqa: E402
+from demo import load_content_index, resolve_atom as _resolve_atom  # noqa: E402
+
+
+def _bounded_span(document: str, pos: int, max_len: int = 4) -> str:
+    stop = " \n\t，。！？；：、（）"
+    end = pos
+    while end < len(document) and document[end] not in stop and end - pos < max_len:
+        end += 1
+    return document[pos:end]
+
+
+def resolve_atom(kind: str, document: str, pos: int, index):
+    """DEL_SPAN stays a bounded word chunk (no long natural-span expansion)."""
+    if kind == "DEL_SPAN":
+        span = _bounded_span(document, pos, 4)
+        if len(span) >= 2:
+            return {"type": "DEL_SPAN", "start": pos, "end": pos + len(span)}
+        return None
+    return _resolve_atom(kind, document, pos, index)
 
 MODEL = BASE / "artifacts" / "big-3ep-geo" / "model.pt"
 
@@ -83,7 +101,7 @@ def score_positions(document: str, model, device) -> list:
             score = edit_logodds(logits)
             if best is None or score > best["logodds"]:
                 best = {"pos": cand_pos, "logodds": score, "class_index": int(np.argmax(logits)), "kind": kind}
-        if best is not None and best["class_index"] != 0:
+        if best is not None and best["class_index"] not in (0, 6):
             scored.append(best)
     scored.sort(key=lambda item: -item["logodds"])
     return scored
@@ -135,6 +153,11 @@ def sweep(document: str, model, device, index, threshold: float, top: int = 3):
 
 
 def show(document: str, model, device, index, threshold: float, top: int) -> None:
+    if len(document) < 24:
+        print("=" * 72)
+        print("原文 :", document)
+        print("  （文本太短，< 24 字，超出训练分布；模型在长文本上工作）")
+        return
     repaired, accepted, near = sweep(document, model, device, index, threshold, top)
     print("=" * 72)
     print("原文 :", document)

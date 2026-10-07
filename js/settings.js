@@ -40,7 +40,7 @@ export class SettingsManager {
             nesEnabled: false,
             logOverlayEnabled: false,
             nesBackend: 'cpu',
-            nesMode: 'api',
+            nesMode: 'local',
             backupIntervalDays: 3,
             lastBackupAt: null,
             lastBackupReminderAt: null,
@@ -252,18 +252,10 @@ export class SettingsManager {
         // NES mode settings
         const nesModeSelect = document.getElementById('nes-mode');
         if (nesModeSelect) {
-            const localOption = nesModeSelect.querySelector('option[value="local"]');
-            if (localOption) {
-                localOption.disabled = true;
-            }
-            if (this.settings.nesMode === 'local') {
-                this.settings.nesMode = 'api';
-                this.saveSettings();
-            }
-            nesModeSelect.value = this.settings.nesMode || 'api';
+            nesModeSelect.value = this.settings.nesMode || 'local';
         }
-        this.toggleNesSettingsPanels(this.settings.nesMode || 'api');
-        this.app.nesManager?.setMode(this.settings.nesMode || 'api');
+        this.toggleNesSettingsPanels(this.settings.nesMode || 'local');
+        this.app.nesManager?.setMode(this.settings.nesMode || 'local');
         
         // NES API settings
         const nesApiUrl = document.getElementById('nes-api-url');
@@ -529,33 +521,9 @@ export class SettingsManager {
     
     async updateModelStatus() {
         const statusEl = document.getElementById('model-status');
-        const downloadBtn = document.getElementById('download-model-btn');
-        
         if (!statusEl) return;
-        
-        try {
-            const isDownloaded = await this.app.db.isModelDownloaded('nes-model');
-            
-            if (isDownloaded) {
-                statusEl.textContent = '已下载';
-                statusEl.style.color = 'var(--primary)';
-                if (downloadBtn) {
-                    downloadBtn.innerHTML = '<i class="fas fa-check"></i> 已下载';
-                    downloadBtn.disabled = true;
-                }
-            } else {
-                statusEl.textContent = '未下载';
-                statusEl.style.color = 'var(--text-muted)';
-                if (downloadBtn) {
-                    downloadBtn.innerHTML = '<i class="fas fa-download"></i> 下载模型';
-                    downloadBtn.disabled = false;
-                    downloadBtn.onclick = () => this.app.nesManager?.downloadModel();
-                }
-            }
-        } catch (error) {
-            console.error('Failed to check model status:', error);
-            statusEl.textContent = '检查失败';
-        }
+        statusEl.textContent = '内置（无需下载）';
+        statusEl.style.color = 'var(--primary)';
     }
     
     toggleNesSettingsPanels(mode) {

@@ -18,12 +18,15 @@
 
 /**
  * KittenNote - NES (Next Edit Suggestion) Manager
- * Local AI-powered text suggestions using transformers.js (ONNX)
- * Also supports OpenAI-compatible API mode
+ *
+ * Two modes:
+ *   local: built-in EFT v0 predictor (on-device, zero network, zero download)
+ *          - typed edit atoms, calibrated gate, content-layer payloads
+ *   api:   OpenAI-compatible chat completion (text continuation + titles)
  */
 
 import { Toast } from './toast.js';
-import { ModelChunkCache, downloadModelFile } from './model-cache.js';
+import { EftEngine, atomEditRange } from './eft-engine.js';
 
 export class NESManager {
     constructor(app) {
@@ -31,38 +34,33 @@ export class NESManager {
         this.enabled = false;
         this.delay = 800;
         this.debounceTimer = null;
-        this.currentSuggestion = null;
-        this.generator = null;
-        this.modelId = 'nes-model';
-        this.modelFileName = 'model_q4.onnx';
-        this.backend = 'cpu';
+        this.currentSuggestion = null;   // legacy inline completion (api mode)
+        this.editSuggestion = null;      // EFT typed edit suggestion (local mode)
+        this.eftEngine = null;
         this.isModelLoaded = false;
         this.isInferring = false;
         this.inferenceId = 0;
         this.isLoadingModel = false;
         this.warnedNoModel = false;
         this.pendingReload = false;
-        
+
         // API mode settings
-        this.mode = 'api'; // 'local' or 'api'
+        this.mode = 'local';
         this.apiUrl = '';
         this.apiKey = '';
         this.apiModel = 'gpt-3.5-turbo';
-        
-        // Custom model
         this.customModelId = null;
-        
+
+        this.suggestionCard = null;
         this.init();
     }
-    
+
     init() {
         // Setup NES accept button for mobile
         const acceptBtn = document.getElementById('nes-accept-btn');
-        // Use pointerdown to set flag BEFORE blur fires on the editor
         acceptBtn?.addEventListener('pointerdown', (e) => {
-            e.preventDefault(); // Prevent focus change
+            e.preventDefault();
             this.isAcceptingSuggestion = true;
-            // Safety reset after a short delay in case click doesn't fire
             setTimeout(() => {
                 if (this.isAcceptingSuggestion) {
                     this.isAcceptingSuggestion = false;
@@ -71,13 +69,37 @@ export class NESManager {
         });
         acceptBtn?.addEventListener('click', () => this.acceptSuggestion());
         this.statusIcon = document.querySelector('.nes-status-icon');
+
+        this.createSuggestionCard();
     }
-    
+
+    createSuggestionCard() {
+        if (this.suggestionCard) return;
+        const card = document.createElement('div');
+        card.id = 'eft-suggestion-card';
+        card.className = 'eft-suggestion-card hidden';
+        card.innerHTML = `
+            <span class="eft-suggestion-text"></span>
+            <button class="eft-suggestion-accept" type="button" title="接受（Tab）"><i class="fas fa-check"></i></button>
+            <button class="eft-suggestion-dismiss" type="button" title="忽略（Esc）"><i class="fas fa-times"></i></button>
+        `;
+        document.body.appendChild(card);
+
+        const accept = card.querySelector('.eft-suggestion-accept');
+        const dismiss = card.querySelector('.eft-suggestion-dismiss');
+        accept.addEventListener('pointerdown', (e) => e.preventDefault());
+        accept.addEventListener('click', () => this.acceptSuggestion());
+        dismiss.addEventListener('pointerdown', (e) => e.preventDefault());
+        dismiss.addEventListener('click', () => this.dismissSuggestion());
+
+        this.suggestionCard = card;
+    }
+
     setMode(mode) {
         if (mode !== 'local' && mode !== 'api') return;
         this.mode = mode;
-        this.app.logger?.info(`I noticed that NES switched to ${mode === 'api' ? 'API' : 'local'} mode.`);
-        
+        this.app.logger?.info(`I noticed that NES switched to ${mode === 'api' ? 'API' : 'built-in EFT'} mode.`);
+
         if (mode === 'local' && this.enabled) {
             this.reloadModel();
         } else if (mode === 'api') {
@@ -85,19 +107,24 @@ export class NESManager {
             this.isModelLoaded = true; // API mode is always "ready"
         }
     }
-    
+
     setApiConfig(url, key, model) {
         this.apiUrl = url || '';
         this.apiKey = key || '';
         this.apiModel = model || 'gpt-3.5-turbo';
     }
-    
+
+    setCustomModel(modelId) {
+        // Kept for settings compatibility; custom ONNX models are API-mode only now.
+        this.customModelId = modelId || null;
+    }
+
     async testApiConnection() {
         if (!this.apiUrl || !this.apiKey) {
             Toast.warning('请填写API地址和Key');
             return false;
         }
-        
+
         try {
             const response = await fetch(this.apiUrl, {
                 method: 'POST',
@@ -111,67 +138,23 @@ export class NESManager {
                     max_tokens: 5
                 })
             });
-            
+
             if (response.ok) {
                 Toast.success('API连接成功！');
                 this.app.logger?.info('I noticed that NES API connection test passed.');
                 return true;
-            } else {
-                const error = await response.text();
-                Toast.error(`API错误: ${response.status}`);
-                this.app.logger?.warn('I noticed that NES API test failed.', error);
-                return false;
             }
+            const error = await response.text();
+            Toast.error(`API错误: ${response.status}`);
+            this.app.logger?.warn('I noticed that NES API test failed.', error);
+            return false;
         } catch (error) {
             Toast.error('连接失败: ' + error.message);
             this.app.logger?.warn('I noticed that NES API connection failed.', error);
             return false;
         }
     }
-    
-    setCustomModel(modelId) {
-        this.customModelId = modelId;
-        if (modelId) {
-            this.modelId = modelId;
-        } else {
-            this.modelId = 'nes-model';
-        }
-    }
 
-    async ensureCrossOriginIsolation() {
-        if (window.crossOriginIsolated === true) {
-            return true;
-        }
-
-        if (!window.isSecureContext) {
-            this.app.logger?.warn('I noticed that NES needs https/localhost to enable cross-origin isolation.');
-            Toast.warning('NES 需要在 https/localhost 下启用跨域隔离');
-            return false;
-        }
-
-        const url = new URL(window.location.href);
-        const isCoiRequested = url.searchParams.get('coi') === '1';
-
-        if (isCoiRequested) {
-            if (!navigator.serviceWorker?.controller) {
-                if (!sessionStorage.getItem('nes_coi_reload')) {
-                    sessionStorage.setItem('nes_coi_reload', '1');
-                    Toast.info('正在应用跨域隔离设置，马上刷新…');
-                    window.location.reload();
-                }
-            } else {
-                Toast.warning('请刷新页面以启用跨域隔离（COOP/COEP）');
-            }
-            return false;
-        }
-
-        url.searchParams.set('coi', '1');
-        sessionStorage.removeItem('nes_coi_reload');
-        Toast.info('NES 需要跨域隔离，正在刷新以启用…');
-        window.location.replace(url.toString());
-        return false;
-    }
-    
     async enable() {
         this.enabled = true;
         this.setStatus('idle');
@@ -181,21 +164,12 @@ export class NESManager {
             this.isModelLoaded = true;
             return;
         }
-        
-        // Check if model is loaded
-        if (!this.isModelLoaded) {
-            const isDownloaded = await this.app.db.isModelDownloaded(this.modelId);
-            if (this.mode === 'local' && !isDownloaded) {
-                this.app.logger?.warn('I noticed that the NES model is still missing.');
-                this.app.settingsManager?.showModal();
-                this.app.settingsManager?.switchTab('nes');
-                return;
-            }
 
+        if (!this.isModelLoaded) {
             await this.reloadModel();
         }
     }
-    
+
     disable() {
         this.enabled = false;
         this.dismissSuggestion();
@@ -205,20 +179,13 @@ export class NESManager {
         }
         this.unloadModel();
     }
-    
+
     setDelay(ms) {
         this.delay = ms;
     }
 
-    setBackend(backend) {
-        if (!backend || backend === this.backend) return;
-        this.backend = backend;
-        this.app.logger?.info(`I noticed that NES switched to ${backend === 'webgpu' ? 'WebGPU' : 'CPU'} mode.`);
-        if (this.enabled) {
-            this.reloadModel();
-        } else {
-            this.unloadModel();
-        }
+    setBackend() {
+        // No-op: the EFT predictor is pure JS and needs no WASM/WebGPU backend.
     }
 
     async reloadModel() {
@@ -241,155 +208,59 @@ export class NESManager {
     }
 
     async unloadModel() {
-        if (!this.generator) {
-            this.isModelLoaded = false;
-            return;
-        }
-
-        const pipelineInstance = this.generator;
-        this.generator = null;
+        this.dismissSuggestion();
         this.isModelLoaded = false;
         this.isInferring = false;
         this.inferenceId++;
         this.warnedNoModel = false;
-
-        try {
-            if (typeof pipelineInstance.dispose === 'function') {
-                await pipelineInstance.dispose();
-            }
-            if (pipelineInstance.model?.dispose) {
-                await pipelineInstance.model.dispose();
-            }
-            if (pipelineInstance.tokenizer?.dispose) {
-                await pipelineInstance.tokenizer.dispose();
-            }
-        } catch (error) {
-            console.warn('Failed to dispose NES pipeline:', error);
-        }
-
-        this.app.logger?.info('I noticed that NES released its model to save memory.');
+        // The engine stays cached: it is small (~6 MB) and instant to reuse.
     }
-    
+
     async loadModel() {
         try {
-            const { pipeline, env } = await import('../assets/transformers.js/transformers.js');
-
-            env.allowLocalModels = true;
-            env.allowRemoteModels = false;
-            env.localModelPath = './assets';
-            env.useBrowserCache = false;
-            // Serve downloaded model weights straight from IndexedDB chunks
-            env.useCustomCache = true;
-            env.customCache = new ModelChunkCache(this.app.db, this.modelId);
-
-            if (env.backends?.onnx?.wasm) {
-                env.backends.onnx.wasm.wasmPaths = {
-                    mjs: './assets/transformers.js/ort-wasm-simd-threaded.jsep.mjs',
-                    wasm: './assets/transformers.js/ort-wasm-simd-threaded.jsep.wasm'
-                };
-            }
-
-            const attemptLoad = async (mode, message) => {
-                if (env.backends?.onnx?.wasm) {
-                    env.backends.onnx.wasm.numThreads = 1;
-                    env.backends.onnx.wasm.simd = false; // Disable SIMD to avoid Aborted() errors
-                    env.backends.onnx.wasm.proxy = false;
-                }
-
-                if (env.backends?.onnx) {
-                    env.backends.onnx.preferredBackend = mode === 'webgpu' ? 'webgpu' : 'wasm';
-                }
-                this.app.logger?.info(message);
-
-                const device = mode === 'webgpu' ? 'webgpu' : 'wasm';
-                return pipeline('text-generation', this.modelId, {
-                    local_files_only: true,
-                    dtype: 'q4',
-                    device
-                });
-            };
-
-            const useWebGPU = this.backend === 'webgpu';
-            if (useWebGPU && !navigator.gpu) {
-                this.app.logger?.warn('WebGPU is not available in this browser. Falling back to CPU.');
-                this.backend = 'cpu';
-            }
-
-            try {
-                if (this.backend === 'webgpu') {
-                    this.generator = await attemptLoad('webgpu', 'I noticed that NES is preparing a WebGPU pipeline (experimental).');
-                } else {
-                    this.generator = await attemptLoad('cpu', 'I noticed that NES is preparing its transformers pipeline.');
-                }
-            } catch (error) {
-                if (this.backend === 'webgpu') {
-                    // Release failed WebGPU instance
-                    if (this.generator) {
-                        try {
-                            if (this.generator.dispose) await this.generator.dispose();
-                            if (this.generator.model?.dispose) await this.generator.model.dispose();
-                            if (this.generator.tokenizer?.dispose) await this.generator.tokenizer.dispose();
-                        } catch (e) { console.warn('Cleanup failed:', e); }
-                        this.generator = null;
-                    }
-                    this.app.logger?.warn('I noticed that WebGPU failed, retrying with CPU.', error);
-                    this.backend = 'cpu';
-                    this.generator = await attemptLoad('cpu', 'I noticed that NES is retrying with CPU pipeline.');
-                } else {
-                    throw error;
-                }
-            }
-
+            this.app.logger?.info('I noticed that NES is waking up the built-in EFT predictor.');
+            this.eftEngine = this.eftEngine || await EftEngine.load('./assets/eft/');
             this.onModelLoaded();
         } catch (error) {
-            console.error('Failed to load NES model:', error);
+            console.error('Failed to load EFT predictor:', error);
             this.isModelLoaded = false;
-            this.app.logger?.warn('I noticed that the NES model refused to load.', error);
+            this.app.logger?.warn('I noticed that the EFT predictor refused to load.', error);
+            Toast.error('内置预测器加载失败');
         }
     }
-    
+
     onModelLoaded() {
-        console.log('NES model loaded successfully');
-        this.app.logger?.info('I learnt that the NES model is now loaded.');
         this.isModelLoaded = true;
+        this.app.logger?.info('I learnt that the EFT predictor is ready.');
     }
-    
-    onModelOutput(text) {
-        if (this.currentInferenceId === this.inferenceId) {
-            this.currentSuggestion = (this.currentSuggestion || '') + text;
-            this.showSuggestion();
-        }
-    }
-    
+
     scheduleInference() {
         if (!this.enabled) return;
-        if (this.mode === 'local' && !this.isModelLoaded) {
+        if (this.mode === 'local' && !this.eftEngine) {
             if (!this.warnedNoModel) {
-                this.app.logger?.warn('I noticed that NES cannot think without its model.');
+                this.app.logger?.warn('I noticed that NES cannot think without its predictor.');
                 this.warnedNoModel = true;
             }
             return;
         }
-        this.app.logger?.info('I noticed that NES is about to think.');
-        
-        // Clear previous timer
+        if (this.mode === 'api' && (!this.apiUrl || !this.apiKey)) {
+            return;
+        }
+
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
         }
-        
-        // Schedule new inference
         this.debounceTimer = setTimeout(() => {
             this.runInference();
         }, this.delay);
     }
-    
+
     async runInference() {
         if (!this.enabled) return;
-        
-        // Check if ready based on mode
-        if (this.mode === 'local' && (!this.generator || !this.isModelLoaded)) return;
+
+        if (this.mode === 'local' && !this.eftEngine) return;
         if (this.mode === 'api' && (!this.apiUrl || !this.apiKey)) return;
-        
+
         if (this.isInferring) {
             this.inferenceId++;
         }
@@ -399,47 +270,39 @@ export class NESManager {
         this.currentSuggestion = '';
         this.currentInferenceId = requestId;
         this.setStatus('running');
-        
-        // Get context from text editor
+
         const textEditor = this.app.textEditor;
         if (!textEditor) {
             this.isInferring = false;
             this.setStatus('idle');
             return;
         }
-        
+
         const textBefore = textEditor.getTextBeforeCursor();
         const textAfter = textEditor.getTextAfterCursor();
-        
-        // Check if there's any content to work with
+
         if (!textBefore && !textAfter) {
             this.isInferring = false;
             this.setStatus('idle');
             return;
         }
-        
-        const limitedBefore = textBefore.slice(-400);
-        const limitedAfter = textAfter.slice(0, 200);
-        
+
         try {
-            let suggestion = '';
-            
             if (this.mode === 'api') {
-                suggestion = await this.runApiInference(limitedBefore, limitedAfter, requestId);
-            } else {
-                suggestion = await this.runLocalInference(limitedBefore, limitedAfter, requestId);
-            }
+                const limitedBefore = textBefore.slice(-400);
+                const limitedAfter = textAfter.slice(0, 200);
+                const suggestion = await this.runApiInference(limitedBefore, limitedAfter, requestId);
+                if (requestId !== this.currentInferenceId) return;
 
-            if (requestId !== this.currentInferenceId) {
-                return;
-            }
-
-            if (suggestion) {
-                this.currentSuggestion = suggestion;
-                this.showSuggestion();
-                this.setStatus('success');
+                if (suggestion) {
+                    this.currentSuggestion = suggestion;
+                    this.showSuggestion();
+                    this.setStatus('success');
+                } else {
+                    this.setStatus('idle');
+                }
             } else {
-                this.setStatus('idle');
+                this.runEftInference(textBefore, textAfter, requestId);
             }
 
             this.app.logger?.info('I noticed that NES finished thinking.');
@@ -448,35 +311,31 @@ export class NESManager {
             this.app.logger?.warn('I noticed that NES inference stumbled.', error);
             this.setStatus('error', error?.message || 'Inference failed');
         } finally {
-            // Always reset isInferring for this request
             if (requestId === this.currentInferenceId) {
                 this.isInferring = false;
             }
         }
     }
-    
-    async runLocalInference(textBefore, textAfter, requestId) {
-        const prompt = this.buildPrompt(textBefore, textAfter);
-        
-        const results = await this.generator(prompt, {
-            max_new_tokens: 50,
-            temperature: 0.7,
-            top_p: 0.9,
-            do_sample: true,
-            return_full_text: false
-        });
 
-        if (requestId !== this.currentInferenceId) {
-            return '';
+    runEftInference(textBefore, textAfter, requestId) {
+        const document = textBefore + textAfter;
+        const suggestions = this.eftEngine.suggest(document, textBefore.length, { maxResults: 1 });
+
+        if (requestId !== this.currentInferenceId) return;
+        if (!suggestions.length) {
+            this.setStatus('idle');
+            return;
         }
 
-        return this.extractSuggestion(results, prompt);
+        this.editSuggestion = suggestions[0];
+        this.showEditSuggestion();
+        this.setStatus('success');
     }
-    
+
     async runApiInference(textBefore, textAfter, requestId) {
         const contextBefore = textBefore.slice(-400);
         const contextAfter = textAfter.slice(0, 200);
-        
+
         const response = await fetch(this.apiUrl, {
             method: 'POST',
             headers: {
@@ -500,61 +359,32 @@ export class NESManager {
                 stream: false
             })
         });
-        
+
         if (requestId !== this.currentInferenceId) {
             return '';
         }
-        
         if (!response.ok) {
             throw new Error(`API error: ${response.status}`);
         }
-        
+
         const data = await response.json();
         return data.choices?.[0]?.message?.content?.trim() || '';
-    }
-    
-    buildPrompt(textBefore, textAfter) {
-        // Simple completion prompt
-        const contextBefore = textBefore.slice(-200);
-        const contextAfter = textAfter.slice(0, 120);
-        const prompt = `Continue this text naturally with one concise sentence (no line breaks).\n\nBefore cursor:\n${contextBefore}\n\nAfter cursor:\n${contextAfter}\n\nContinuation:`;
-        return prompt;
-    }
-
-    extractSuggestion(results, prompt) {
-        if (!results) return '';
-
-        const item = Array.isArray(results) ? results[0] : results;
-        const text = item?.generated_text ?? item?.text ?? '';
-        if (!text) return '';
-
-        if (text.startsWith(prompt)) {
-            return text.slice(prompt.length).trimStart();
-        }
-
-        return text.trimStart();
     }
 
     async generateTitle(text) {
         const source = (text || '').toString().trim();
         if (!source) return '';
 
-        const snippet = source.slice(0, 800);
-
-        if (this.mode === 'api') {
-            if (!this.apiUrl || !this.apiKey) {
-                Toast.warning('请先在设置中配置 NES API 地址和密钥');
-                return '';
-            }
-            return this.runApiTitle(snippet);
-        }
-
-        if (!this.generator || !this.isModelLoaded) {
-            Toast.warning('本地模型未就绪');
+        if (this.mode === 'local') {
+            Toast.warning('内置预测器不支持标题生成，请切换 API 模式');
             return '';
         }
 
-        return this.runLocalTitle(snippet);
+        if (!this.apiUrl || !this.apiKey) {
+            Toast.warning('请先在设置中配置 NES API 地址和密钥');
+            return '';
+        }
+        return this.runApiTitle(source.slice(0, 800));
     }
 
     async runApiTitle(snippet) {
@@ -587,22 +417,7 @@ export class NESManager {
         }
 
         const data = await response.json();
-        const raw = data.choices?.[0]?.message?.content?.trim() || '';
-        return this.trimTitle(raw);
-    }
-
-    async runLocalTitle(snippet) {
-        const prompt = `Create a short title within 10 characters. Output only the title.\n\n${snippet}\n\nTitle:`;
-        const results = await this.generator(prompt, {
-            max_new_tokens: 20,
-            temperature: 0.5,
-            top_p: 0.9,
-            do_sample: true,
-            return_full_text: false
-        });
-
-        const title = this.extractSuggestion(results, prompt);
-        return this.trimTitle(title);
+        return this.trimTitle(data.choices?.[0]?.message?.content?.trim() || '');
     }
 
     trimTitle(title) {
@@ -610,41 +425,72 @@ export class NESManager {
         if (!cleaned) return '';
         return cleaned.length > 10 ? cleaned.slice(0, 10) : cleaned;
     }
-    
+
     showSuggestion() {
         if (!this.currentSuggestion) return;
-        
-        const textEditor = this.app.textEditor;
-        textEditor?.showSuggestion(this.currentSuggestion);
-        
-        // Show accept button on mobile
+
+        this.app.textEditor?.showSuggestion(this.currentSuggestion);
+
         const acceptBtn = document.getElementById('nes-accept-btn');
         if (acceptBtn && this.currentSuggestion) {
             acceptBtn.classList.remove('hidden');
         }
     }
-    
+
+    showEditSuggestion() {
+        const card = this.suggestionCard;
+        if (!card || !this.editSuggestion) return;
+
+        const label = card.querySelector('.eft-suggestion-text');
+        if (label) {
+            label.textContent = `建议：${this.editSuggestion.description}`;
+        }
+
+        const cursor = this.app.textEditor?.getCursorPosition?.();
+        card.classList.remove('hidden');
+        if (cursor) {
+            const width = 340;
+            const x = Math.max(8, Math.min(window.innerWidth - width - 8, cursor.x));
+            const y = Math.min(window.innerHeight - 56, cursor.y + (cursor.height || 20) + 8);
+            card.style.left = `${x}px`;
+            card.style.top = `${y}px`;
+        }
+
+        const acceptBtn = document.getElementById('nes-accept-btn');
+        acceptBtn?.classList.remove('hidden');
+    }
+
     dismissSuggestion() {
         this.currentSuggestion = null;
+        this.editSuggestion = null;
         this.app.textEditor?.hideSuggestion();
+        this.suggestionCard?.classList.add('hidden');
         this.setStatus('idle');
-        
+
         const acceptBtn = document.getElementById('nes-accept-btn');
         acceptBtn?.classList.add('hidden');
     }
-    
+
     hasSuggestion() {
-        return !!this.currentSuggestion;
+        return !!(this.editSuggestion || this.currentSuggestion);
     }
-    
+
     acceptSuggestion() {
+        if (this.editSuggestion) {
+            const range = atomEditRange(this.editSuggestion.atom);
+            const applied = range
+                ? this.app.textEditor?.applyPlainTextEdit(range.start, range.end, range.replacement)
+                : false;
+            this.app.logger?.info(
+                `I applied a NES suggestion: ${this.editSuggestion.description} (${applied ? 'ok' : 'failed'}).`
+            );
+            this.dismissSuggestion();
+            return;
+        }
+
         if (!this.currentSuggestion) return;
-        
-        const textEditor = this.app.textEditor;
-        this.isAcceptingSuggestion = true;
-        textEditor?.acceptSuggestion(this.currentSuggestion);
-        this.isAcceptingSuggestion = false;
-        
+
+        this.app.textEditor?.acceptSuggestion(this.currentSuggestion);
         this.dismissSuggestion();
     }
 
@@ -664,66 +510,6 @@ export class NESManager {
             }
         } else {
             this.statusIcon.removeAttribute('title');
-        }
-    }
-    
-    async downloadModel() {
-        const progressBar = document.getElementById('download-progress');
-        const progressFill = progressBar?.querySelector('.progress-fill');
-        const progressText = progressBar?.querySelector('.progress-text');
-        const downloadBtn = document.getElementById('download-model-btn');
-        
-        if (progressBar) progressBar.classList.remove('hidden');
-        if (downloadBtn) downloadBtn.disabled = true;
-        
-        try {
-            const modelUrl = this.app.settingsManager?.settings?.nesModelUrl
-                || './assets/nes-model/onnx/model_q4.onnx';
-
-            const formatMb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
-
-            const result = await downloadModelFile({
-                db: this.app.db,
-                modelName: this.modelId,
-                url: modelUrl,
-                onProgress: ({ received, total, percent }) => {
-                    if (progressFill) progressFill.style.width = `${percent}%`;
-                    if (progressText) {
-                        progressText.textContent = total > 0
-                            ? `${percent}% (${formatMb(received)}/${formatMb(total)} MB)`
-                            : `${formatMb(received)} MB`;
-                    }
-                }
-            });
-
-            // Update UI
-            if (progressBar) progressBar.classList.add('hidden');
-            if (downloadBtn) {
-                downloadBtn.innerHTML = '<i class="fas fa-check"></i> 已下载';
-            }
-            
-            const statusEl = document.getElementById('model-status');
-            if (statusEl) {
-                statusEl.textContent = '已下载';
-                statusEl.style.color = 'var(--primary)';
-            }
-
-            this.app.logger?.info(`NES model stored: ${result.totalChunks} chunks, ${formatMb(result.totalBytes)} MB.`);
-            this.app.settingsManager?.updateModelStatus?.();
-            
-            // Load model
-            await this.loadModel();
-            
-        } catch (error) {
-            console.error('Model download failed:', error);
-            
-            if (progressBar) progressBar.classList.add('hidden');
-            if (downloadBtn) {
-                downloadBtn.disabled = false;
-                downloadBtn.innerHTML = '<i class="fas fa-download"></i> 重试下载';
-            }
-            this.app.logger?.warn('model download failed.', error);
-            this.app.Toast?.show('模型下载失败: ' + (error?.message || error), 'error');
         }
     }
 }

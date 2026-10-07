@@ -777,71 +777,28 @@
                         <div class="backup-hero-icon"><i class="fas fa-robot"></i></div>
                         <div class="backup-hero-text">
                             <h4>AI 助手</h4>
-                            <p>配置 AI 智能建议功能，支持本地模型和 API 模式。</p>
+                            <p>配置 NES 智能建议：内置 EFT 预测器（本地）或 API 模式。</p>
                         </div>
                     </div>
                     <div class="setting-item">
                         <label>推理模式</label>
                         <select id="nes-mode" class="setting-select">
+                            <option value="local">内置预测器 EFT（本地）</option>
                             <option value="api">API（OpenAI格式）</option>
-                            <option value="local" disabled>本地模型（暂不可用）</option>
                         </select>
                     </div>
                     
-                    <!-- Local Model Settings -->
+                    <!-- Built-in EFT predictor -->
                     <div id="nes-local-settings">
                         <div class="setting-item">
-                            <span class="setting-hint">本地模型为实验性功能，稳定性不保证，建议优先使用 API 模式。</span>
+                            <span class="setting-hint">内置 EFT v0 预测器：本地推理、零下载、数据不出设备。输出类型化编辑建议（改字 / 删重复 / 补标点 / 删冗余），应用前通过类型检查；建议错误可随时忽略。</span>
                         </div>
                         <div class="setting-item">
                             <label>模型状态</label>
                             <div class="model-status">
-                                <p>状态: <span id="model-status">未下载</span></p>
-                                <p>大小: <span id="model-size">约 400MB</span></p>
+                                <p>状态: <span id="model-status">内置</span></p>
+                                <p>大小: <span id="model-size">约 6MB</span></p>
                             </div>
-                        </div>
-                        <div class="setting-item">
-                            <label>内置模型</label>
-                            <div class="model-download">
-                                <button id="download-model-btn" class="btn btn-primary">
-                                    <i class="fas fa-download"></i>
-                                    下载模型
-                                </button>
-                                <div id="download-progress" class="progress-bar hidden">
-                                    <div class="progress-fill"></div>
-                                    <span class="progress-text">0%</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="setting-item">
-                            <label>模型下载地址（可选）</label>
-                            <input type="text" id="nes-model-url" class="setting-input"
-                                   placeholder="./assets/nes-model/onnx/model_q4.onnx">
-                            <span class="setting-hint">模型权重不随应用分发。可填同源路径或自建地址（需允许 CORS）。</span>
-                        </div>
-                        <div class="setting-item">
-                            <label>自定义模型</label>
-                            <div class="custom-model-upload">
-                                <button id="import-custom-model-btn" class="btn btn-secondary">
-                                    <i class="fas fa-folder-open"></i>
-                                    导入ONNX模型目录
-                                </button>
-                                <span class="setting-hint">需要包含model.onnx、tokenizer.json等文件</span>
-                                <div id="custom-model-info" class="custom-model-info hidden">
-                                    <span id="custom-model-name"></span>
-                                    <button id="remove-custom-model-btn" class="btn-icon" title="移除自定义模型">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="setting-item">
-                            <label>推理后端</label>
-                            <select id="nes-backend" class="setting-select">
-                                <option value="cpu">CPU（WASM）</option>
-                                <option value="webgpu">WebGPU（实验性）</option>
-                            </select>
-                            <span class="setting-hint">WebGPU 需要浏览器支持，可能不稳定</span>
                         </div>
                     </div>
                     

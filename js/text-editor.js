@@ -585,6 +585,58 @@ export class TextEditor {
         return this.contentElement?.scrollTop || 0;
     }
 
+    /**
+     * Apply a plain-text edit (used by NES edit suggestions).
+     * Offsets are JS string offsets into the concatenated text content,
+     * matching getTextBeforeCursor()/getCursorOffset().
+     * Returns true when the edit was applied.
+     */
+    applyPlainTextEdit(startOffset, endOffset, replacement = '') {
+        if (!this.contentElement) return false;
+        if (!Number.isFinite(startOffset) || !Number.isFinite(endOffset)) return false;
+        if (startOffset > endOffset) return false;
+
+        const locate = (offset) => {
+            const walker = document.createTreeWalker(this.contentElement, NodeFilter.SHOW_TEXT, null);
+            let current = 0;
+            let node = walker.nextNode();
+            while (node) {
+                const length = node.textContent.length;
+                if (current + length >= offset) {
+                    return { node, offset: Math.max(0, Math.min(length, offset - current)) };
+                }
+                current += length;
+                node = walker.nextNode();
+            }
+            return null;
+        };
+
+        const start = locate(startOffset);
+        const end = locate(endOffset);
+        if (!start || !end) return false;
+
+        const range = document.createRange();
+        range.setStart(start.node, start.offset);
+        range.setEnd(end.node, end.offset);
+        range.deleteContents();
+
+        const selection = window.getSelection();
+        if (replacement) {
+            const textNode = document.createTextNode(replacement);
+            range.insertNode(textNode);
+            range.setStartAfter(textNode);
+            range.setEndAfter(textNode);
+        } else {
+            range.collapse(true);
+        }
+
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        this.handleInput();
+        return true;
+    }
+
     setScrollTop(value) {
         if (this.contentElement) {
             this.contentElement.scrollTop = value;

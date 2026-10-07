@@ -21,8 +21,8 @@
  * Handles offline caching and PWA functionality
  */
 
-const SHELL_CACHE = 'kitten-note-shell-v3';
-const RUNTIME_CACHE = 'kitten-note-runtime-v3';
+const SHELL_CACHE = 'kitten-note-shell-v4';
+const RUNTIME_CACHE = 'kitten-note-runtime-v4';
 
 // Core shell assets precached on install.
 // Individual failures are tolerated by the per-asset allSettled below.
@@ -42,6 +42,7 @@ const SHELL_ASSETS = [
     './js/export.js',
     './js/ink-editor.js',
     './js/nes.js',
+    './js/eft-engine.js',
     './js/opfs-storage.js',
     './js/settings.js',
     './js/sync.js',
@@ -80,13 +81,20 @@ const SHELL_ASSETS = [
     './assets/fontawesome/webfonts/fa-brands-400.woff2',
     // QR Code libraries
     './assets/qrcode/qrcode-generator.min.js',
-    './assets/qrcode/jsQR.min.js'
+    './assets/qrcode/jsQR.min.js',
+    // Built-in EFT predictor (v0 NES model)
+    './assets/eft/eft.mjs',
+    './assets/eft/model.json',
+    './assets/eft/softmax.bin',
+    './assets/eft/prototypes.bin',
+    './assets/eft/base.bin',
+    './assets/eft/content.json'
 ];
 
 const COI_PARAM = 'coi';
 
 // Locally bundled AI runtime/model directories served cache-first from the runtime cache.
-const RUNTIME_PREFIXES = ['/assets/transformers.js/', '/assets/nes-model/'];
+const RUNTIME_PREFIXES = ['/assets/transformers.js/', '/assets/nes-model/', '/assets/eft/'];
 
 const OFFLINE_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
