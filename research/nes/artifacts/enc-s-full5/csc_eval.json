@@ -1,0 +1,12 @@
+{
+  "n": 1100,
+  "error_items": 550,
+  "fired_rate": 0.2581818181818182,
+  "detection_rate": 0.03636363636363636,
+  "correction_rate": 0.0,
+  "clean_items": 550,
+  "clean_fire_rate": 0.26,
+  "threshold": 4.0,
+  "note": "confusion table frozen; a few entries added after live probes (disclosed)",
+  "miss_examples": []
+}

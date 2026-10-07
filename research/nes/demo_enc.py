@@ -32,8 +32,8 @@ MODEL = BASE / "artifacts" / "enc-s-full5" / "model.pt"
 SEQ = BASE / "data" / "seq"
 
 
-def load_model(device: str):
-    checkpoint = torch.load(MODEL, map_location=device, weights_only=False)
+def load_model(device: str, model_path: Path | None = None):
+    checkpoint = torch.load(model_path or MODEL, map_location=device, weights_only=False)
     vocab = json.loads((SEQ / "vocab.json").read_text(encoding="utf-8"))
     stoi, maxlen = vocab["stoi"], vocab["maxlen"]
     config = PRESETS[checkpoint.get("preset", "S")]

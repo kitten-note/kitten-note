@@ -36,6 +36,8 @@ from synth import Synthesizer  # noqa: E402
 
 SEQ_DIR = BASE / "data" / "seq"
 REV_PAIRS = BASE / "data" / "external" / "rev_pairs.jsonl"
+CSC_TRAIN = BASE / "data" / "external" / "shibing624__CSC" / "train.json"
+CSC_DEV = BASE / "data" / "external" / "shibing624__CSC" / "dev.json"
 
 
 def _atom_anchor(atom: dict) -> int:
@@ -177,6 +179,40 @@ def gap_labels(noisy: str, samples: List[Dict]) -> Tuple[np.ndarray, int]:
     return labels, collisions
 
 
+def load_csc_labeled(path: Path, cap: int = 300_000) -> List:
+    """Real human typos (CSC train/dev) as gap-labeled segments.
+
+    Same-length substitution pairs only: error char j -> FIX_CHAR at gap j+1.
+    NEVER point this at test.json (it stays the blind set).
+    """
+    assert path.name != "test.json", "test.json stays blind"
+    items = []
+    if not path.exists():
+        return items
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return items
+    for row in rows:
+        if len(items) >= cap:
+            break
+        wrong, correct = row.get("original_text", ""), row.get("correct_text", "")
+        if len(wrong) != len(correct) or not (2 <= len(wrong) <= MAXLEN - 1):
+            continue
+        positions = [p for p in row.get("wrong_ids", []) if 0 <= p < len(wrong)]
+        if not positions:
+            continue
+        labels = np.zeros(len(wrong) + 1, dtype=np.int8)
+        for pos in positions:
+            if wrong[pos] == correct[pos]:
+                continue
+            labels[pos + 1] = CLASS_TO_ID["FIX_CHAR"]
+        if labels.sum() == 0:
+            continue
+        items.append((wrong, labels))
+    return items
+
+
 def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 20261007,
           short_n: int = 2) -> Dict:
     SEQ_DIR.mkdir(parents=True, exist_ok=True)
@@ -241,6 +277,10 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     print(f"[seq] real revision windows: {len(rev_items)}", flush=True)
     edited.extend(rev_items)
 
+    csc_items = load_csc_labeled(CSC_TRAIN)
+    print(f"[seq] real CSC typo segments: {len(csc_items)}", flush=True)
+    edited.extend(csc_items)
+
     rng = np.random.default_rng(seed)
     edited_ids = rng.permutation(len(edited))
     val_take = max(100, len(edited) // 50)
@@ -256,6 +296,9 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
 
     train_items = [edited[i] for i in edited_ids[val_take:]] + clean
     val_items = [edited[i] for i in edited_ids[:val_take]]
+    csc_dev = load_csc_labeled(CSC_DEV, cap=3000)
+    print(f"[seq] real CSC dev segments in val: {len(csc_dev)}", flush=True)
+    val_items.extend(csc_dev)
     train_ids, train_labels = pack(train_items)
     val_ids, val_labels = pack(val_items)
     np.savez_compressed(SEQ_DIR / "train.npz", ids=train_ids, labels=train_labels)
