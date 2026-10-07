@@ -90,6 +90,7 @@ const SHELL_ASSETS = [
     './assets/eft/prototypes.bin',
     './assets/eft/base.bin',
     './assets/eft/content.json',
+    './assets/eft/confusion.json',,
     // Built-in EFT-v1 encoder (S-full, single forward pass per document)
     './assets/enc/enc.js',
     './assets/enc/model.json',

@@ -38,13 +38,41 @@ const MIN_DOCUMENT_LENGTH = 24;
 const WINDOW_LEFT = 200;
 const WINDOW_RIGHT = 40;
 const SUPPRESS_DISTANCE = 5;
+const VERIFY_TOP_K = 3;
+const VERIFY_MAX_PAYLOADS = 4;
+const VERIFY_RADIUS = 40;
+// Deletions destroy text: DEL_SPAN needs a higher bar than the gate.
+const DEL_SPAN_EXTRA = 4.0;
+// A payload is accepted only if the repaired neighborhood is truly calm
+// (absolute bar, not relative to the firing score): wrong payloads leave
+// the region warm, true fixes make it quiet.
+const VERIFY_CALM_CAP = 2.0;
 
 export { applyAtom, describeAtom, atomEditRange };
 
+/** Build a bidirectional confusion map {char -> [alternatives]}. */
+function buildConfusion(raw) {
+    const map = new Map();
+    const add = (a, b) => {
+        if (typeof a !== 'string' || typeof b !== 'string' || a === b) return;
+        if (Array.from(a).length !== 1 || Array.from(b).length !== 1) return;
+        if (!map.has(a)) map.set(a, []);
+        if (!map.get(a).includes(b)) map.get(a).push(b);
+    };
+    for (const [char, alts] of Object.entries(raw || {})) {
+        for (const alt of alts || []) {
+            add(char, alt);
+            add(alt, char);
+        }
+    }
+    return map;
+}
+
 export class EncEngine {
-    constructor(model, contentHelper) {
+    constructor(model, contentHelper, confusion) {
         this.model = model;
         this.content = contentHelper;
+        this.confusion = confusion || new Map();
     }
 
     static async load(prefix = './assets/enc/') {
@@ -55,19 +83,86 @@ export class EncEngine {
         } catch (error) {
             console.warn('ENC content tables unavailable; payload proposals limited.', error);
         }
-        return new EncEngine(model, new EftEngine(null, content));
+        let confusion = new Map();
+        try {
+            confusion = buildConfusion(await (await fetch('./assets/eft/confusion.json')).json());
+        } catch (error) {
+            console.warn('ENC confusion table unavailable.', error);
+        }
+        return new EncEngine(model, new EftEngine(null, content), confusion);
     }
 
     static fromBuffers(meta, stoi, weightsBuffer, content) {
         const model = EncModel.fromBuffers(meta, stoi, weightsBuffer);
-        return new EncEngine(model, new EftEngine(null, content || { uni: {}, bi: {} }));
+        const confusion = buildConfusion(content && content.confusion);
+        return new EncEngine(model, new EftEngine(null, content || { uni: {}, bi: {} }), confusion);
+    }
+
+    /** Candidate payloads for verification (confusion-first, n-gram fallback). */
+    payloadVariants(className, document, pos, atom) {
+        const out = [];
+        const seen = new Set();
+        const push = (char) => {
+            if (typeof char !== 'string' || Array.from(char).length !== 1) return;
+            if (seen.has(char)) return;
+            seen.add(char);
+            if (out.length < VERIFY_MAX_PAYLOADS) out.push(char);
+        };
+        if (atom.char) push(atom.char);
+        if (className === 'FIX_CHAR') {
+            for (const c of (this.confusion.get(document[pos]) || [])) {
+                if (c !== document[pos]) push(c);
+            }
+        } else if (className === 'INS_CHAR') {
+            for (const c of this.content.proposeNext(document.slice(0, pos))) push(c);
+        }
+        return out;
+    }
+
+    /**
+     * Re-score the repaired neighborhood: returns the worst edit log-odds
+     * within +-3 gaps of the edit after applying `payload` (+Infinity when
+     * the payload is ill-typed). A good repair calms the region.
+     */
+    localCalm(document, pos, className, payload) {
+        const atom = className === 'FIX_CHAR'
+            ? { type: 'FIX_CHAR', pos, char: payload }
+            : { type: 'INS_CHAR', pos, char: payload };
+        const repaired = applyAtom(document, atom);
+        if (repaired === null) return Infinity;
+        const localFrom = Math.max(0, pos - VERIFY_RADIUS);
+        const local = repaired.slice(localFrom, Math.min(repaired.length, pos + VERIFY_RADIUS + 1));
+        const tags = this.model.tagDocument(local);
+        const center = className === 'FIX_CHAR' ? (pos - localFrom) + 1 : (pos - localFrom);
+        let worst = -Infinity;
+        for (let g = Math.max(0, center - 3); g <= Math.min(tags.length - 1, center + 3); g++) {
+            if (tags[g].logodds > worst) worst = tags[g].logodds;
+        }
+        return worst;
+    }
+
+    /**
+     * Verify a FIX/INS candidate: try each payload, keep the one that calms
+     * the neighborhood most. Returns {atom, calm} or null.
+     */
+    verify(candidate, document, threshold) {
+        const { className, pos, atom } = candidate;
+        let best = null;
+        for (const char of this.payloadVariants(className, document, pos, atom)) {
+            const calm = this.localCalm(document, pos, className, char);
+            if (!best || calm < best.calm) best = { char, calm };
+        }
+        if (!best || best.calm >= threshold) return null;
+        const verifiedAtom = { ...atom, char: best.char };
+        if (applyAtom(document, verifiedAtom) === null) return null;
+        return { atom: verifiedAtom, calm: best.calm };
     }
 
     /**
      * @returns {Array<{pos:number, className:string, editProbability:number,
      *                  confidence:number, atom:object, description:string}>}
      */
-    suggest(document, cursorOffset, { maxResults = 1, threshold = 8.0 } = {}) {
+    suggest(document, cursorOffset, { maxResults = 1, threshold = 4.0 } = {}) {
         if (typeof document !== 'string' || document.length < MIN_DOCUMENT_LENGTH) return [];
         if (!this.model) return [];
 
@@ -99,6 +194,11 @@ export class EncEngine {
                 if (!best || tag.logodds > best.logodds) {
                     best = { ...tag, gap: g };
                 }
+            }
+            // DEL_SPAN bypassed the gate before; enforce a higher bar here.
+            if (!best || best.logodds < threshold + DEL_SPAN_EXTRA) {
+                spanStart = -1;
+                return;
             }
             const atom = { type: 'DEL_SPAN', start, end };
             if (applyAtom(document, atom) !== null) {
@@ -159,8 +259,22 @@ export class EncEngine {
         if (spanStart >= 0) flushSpan(tags.length - 1);
 
         results.sort((a, b) => b.score - a.score);
+        // Verify FIX/INS payloads (top candidates only): a payload is kept
+        // only if the repaired neighborhood is truly calm. Garbage payloads
+        // become silence, not wrong suggestions.
+        const calmCap = Math.min(threshold, VERIFY_CALM_CAP);
+        const verified = [];
+        for (const candidate of results.slice(0, VERIFY_TOP_K)) {
+            if (candidate.className === 'FIX_CHAR' || candidate.className === 'INS_CHAR') {
+                const check = this.verify(candidate, document, calmCap);
+                if (!check) continue;
+                verified.push({ ...candidate, atom: check.atom, description: describeAtom(check.atom, document) });
+            } else {
+                verified.push(candidate);
+            }
+        }
         const accepted = [];
-        for (const candidate of results) {
+        for (const candidate of verified) {
             if (accepted.length >= Math.max(1, maxResults)) break;
             if (accepted.some((item) => Math.abs(item.pos - candidate.pos) < SUPPRESS_DISTANCE)) continue;
             accepted.push(candidate);
@@ -172,7 +286,7 @@ export class EncEngine {
      * Full sweep trace for diagnostics (log overlay / console / self-test).
      */
     suggestDetailed(document, cursorOffset, options = {}) {
-        const { maxResults = 1, threshold = 8.0 } = options;
+        const { maxResults = 1, threshold = 4.0 } = options;
         const details = {
             engine: 'enc-v1',
             documentLength: typeof document === 'string' ? document.length : 0,

@@ -370,7 +370,8 @@ export class NESManager {
         if (!details.suggestions.length) {
             const best = details.best;
             this.app.logger?.info(
-                `NES 扫描完成：${details.positions} 个位置，门控触发 ${details.gateFired}，通过筛选 ${details.passedFilters}；` +
+                `NES［${this.engineName || 'unknown'}］扫描完成：${details.positions} 个位置，` +
+                `门控触发 ${details.gateFired}，通过筛选 ${details.passedFilters}；` +
                 (best
                     ? `最佳候选 ${best.className} @${best.pos}（P=${best.editProbability.toFixed(3)}，conf=${best.confidence.toFixed(3)}）低于阈值。`
                     : '窗口内无候选。')
@@ -381,7 +382,7 @@ export class NESManager {
 
         this.editSuggestion = details.suggestions[0];
         this.app.logger?.info(
-            `NES 建议：${this.editSuggestion.description}（${this.editSuggestion.className} @${this.editSuggestion.pos}，` +
+            `NES［${this.engineName || 'unknown'}］建议：${this.editSuggestion.description}（${this.editSuggestion.className} @${this.editSuggestion.pos}，` +
             `P=${this.editSuggestion.editProbability.toFixed(3)}，conf=${this.editSuggestion.confidence.toFixed(3)}，${Math.round(elapsed)} ms）`
         );
         this.showEditSuggestion();

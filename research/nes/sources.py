@@ -35,6 +35,9 @@ DISCOVERY_QUERIES = [
     "chinese spelling correction",
     "chinese text corpus",
     "中文 语料",
+    "LCSTS weibo",
+    "chinese dialogue corpus",
+    "chinese forum qa corpus",
 ]
 
 TEXT_KEYS = ["text", "content", "sentence", "document", "completion", "zh", "paragraph", "output", "target"]

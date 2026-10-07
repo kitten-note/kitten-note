@@ -104,7 +104,18 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     for line in lines:
         if len(edited) >= max_segments or time.time() > deadline:
             break
-        for piece in segment(line):
+        pieces = list(segment(line))
+        # Short-text regime (42-60 chars): the app sees short notes/chat text,
+        # but synthesis previously only saw 60-260 char pieces. Slices below
+        # 42 chars are skipped (synthesis needs 2*EDGE+10 chars of context).
+        if len(line) >= 50:
+            for _ in range(2):
+                start = int(rng.integers(0, len(line) - 42))
+                end = start + int(rng.integers(42, min(61, len(line) - start + 1)))
+                cand = " ".join(line[start:end].split())
+                if 42 <= len(cand) <= 60:
+                    pieces.append(cand)
+        for piece in pieces:
             if len(edited) >= max_segments or time.time() > deadline:
                 break
             scanned += 1
