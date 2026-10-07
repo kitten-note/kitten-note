@@ -38,15 +38,8 @@ const MIN_DOCUMENT_LENGTH = 24;
 const WINDOW_LEFT = 200;
 const WINDOW_RIGHT = 40;
 const SUPPRESS_DISTANCE = 5;
-const VERIFY_TOP_K = 3;
-const VERIFY_MAX_PAYLOADS = 4;
-const VERIFY_RADIUS = 40;
 // Deletions destroy text: DEL_SPAN needs a higher bar than the gate.
 const DEL_SPAN_EXTRA = 4.0;
-// A payload is accepted only if the repaired neighborhood is truly calm
-// (absolute bar, not relative to the firing score): wrong payloads leave
-// the region warm, true fixes make it quiet.
-const VERIFY_CALM_CAP = 2.0;
 
 export { applyAtom, describeAtom, atomEditRange };
 
@@ -98,64 +91,10 @@ export class EncEngine {
         return new EncEngine(model, new EftEngine(null, content || { uni: {}, bi: {} }), confusion);
     }
 
-    /** Candidate payloads for verification (confusion-first, n-gram fallback). */
-    payloadVariants(className, document, pos, atom) {
-        const out = [];
-        const seen = new Set();
-        const push = (char) => {
-            if (typeof char !== 'string' || Array.from(char).length !== 1) return;
-            if (seen.has(char)) return;
-            seen.add(char);
-            if (out.length < VERIFY_MAX_PAYLOADS) out.push(char);
-        };
-        if (atom.char) push(atom.char);
-        if (className === 'FIX_CHAR') {
-            for (const c of (this.confusion.get(document[pos]) || [])) {
-                if (c !== document[pos]) push(c);
-            }
-        } else if (className === 'INS_CHAR') {
-            for (const c of this.content.proposeNext(document.slice(0, pos))) push(c);
-        }
-        return out;
-    }
-
-    /**
-     * Re-score the repaired neighborhood: returns the worst edit log-odds
-     * within +-3 gaps of the edit after applying `payload` (+Infinity when
-     * the payload is ill-typed). A good repair calms the region.
-     */
-    localCalm(document, pos, className, payload) {
-        const atom = className === 'FIX_CHAR'
-            ? { type: 'FIX_CHAR', pos, char: payload }
-            : { type: 'INS_CHAR', pos, char: payload };
-        const repaired = applyAtom(document, atom);
-        if (repaired === null) return Infinity;
-        const localFrom = Math.max(0, pos - VERIFY_RADIUS);
-        const local = repaired.slice(localFrom, Math.min(repaired.length, pos + VERIFY_RADIUS + 1));
-        const tags = this.model.tagDocument(local);
-        const center = className === 'FIX_CHAR' ? (pos - localFrom) + 1 : (pos - localFrom);
-        let worst = -Infinity;
-        for (let g = Math.max(0, center - 3); g <= Math.min(tags.length - 1, center + 3); g++) {
-            if (tags[g].logodds > worst) worst = tags[g].logodds;
-        }
-        return worst;
-    }
-
-    /**
-     * Verify a FIX/INS candidate: try each payload, keep the one that calms
-     * the neighborhood most. Returns {atom, calm} or null.
-     */
-    verify(candidate, document, threshold) {
-        const { className, pos, atom } = candidate;
-        let best = null;
-        for (const char of this.payloadVariants(className, document, pos, atom)) {
-            const calm = this.localCalm(document, pos, className, char);
-            if (!best || calm < best.calm) best = { char, calm };
-        }
-        if (!best || best.calm >= threshold) return null;
-        const verifiedAtom = { ...atom, char: best.char };
-        if (applyAtom(document, verifiedAtom) === null) return null;
-        return { atom: verifiedAtom, calm: best.calm };
+    /** Candidate payloads for FIX_CHAR (confusion table only). */
+    fixPayload(document, pos) {
+        const alts = this.confusion.get(document[pos]) || [];
+        return alts.length ? alts[0] : null;
     }
 
     /**
@@ -233,7 +172,12 @@ export class EncEngine {
             if ((className === 'FIX_CHAR' || className === 'DEL_CHAR') && gap >= 1) {
                 pos = from + gap - 1;
                 if (className === 'FIX_CHAR') {
-                    atom = this.content.resolveAtom('FIX_CHAR', document, pos);
+                    // Confusion table only: every FIX suggestion is a known
+                    // common confusion (high precision by construction). No
+                    // n-gram fallback (it proposes rare-char garbage OOD).
+                    const payload = this.fixPayload(document, pos);
+                    if (payload === null || payload === document[pos]) continue;
+                    atom = { type: 'FIX_CHAR', pos, char: payload };
                 } else {
                     atom = { type: 'DEL_CHAR', pos };
                 }
@@ -259,22 +203,8 @@ export class EncEngine {
         if (spanStart >= 0) flushSpan(tags.length - 1);
 
         results.sort((a, b) => b.score - a.score);
-        // Verify FIX/INS payloads (top candidates only): a payload is kept
-        // only if the repaired neighborhood is truly calm. Garbage payloads
-        // become silence, not wrong suggestions.
-        const calmCap = Math.min(threshold, VERIFY_CALM_CAP);
-        const verified = [];
-        for (const candidate of results.slice(0, VERIFY_TOP_K)) {
-            if (candidate.className === 'FIX_CHAR' || candidate.className === 'INS_CHAR') {
-                const check = this.verify(candidate, document, calmCap);
-                if (!check) continue;
-                verified.push({ ...candidate, atom: check.atom, description: describeAtom(check.atom, document) });
-            } else {
-                verified.push(candidate);
-            }
-        }
         const accepted = [];
-        for (const candidate of verified) {
+        for (const candidate of results) {
             if (accepted.length >= Math.max(1, maxResults)) break;
             if (accepted.some((item) => Math.abs(item.pos - candidate.pos) < SUPPRESS_DISTANCE)) continue;
             accepted.push(candidate);

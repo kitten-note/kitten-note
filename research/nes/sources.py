@@ -213,12 +213,14 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
     queue = [repo for repo in candidates if not (repo in seen or seen.add(repo))]
 
     deadline = time.time() + minutes * 60
-    total_chars = consolidated.stat().st_size if consolidated.exists() else 0
-    print(f"[sources] starting collection: {len(queue)} candidates, budget {minutes:.0f} min / {max_total_chars/1e6:.0f}M chars")
+    preexisting = consolidated.stat().st_size if consolidated.exists() else 0
+    total_chars = preexisting
+    new_chars = 0
+    print(f"[sources] starting collection: {len(queue)} candidates, budget {minutes:.0f} min / {max_total_chars/1e6:.0f}M NEW chars (file already has {preexisting/1e6:.1f}M)")
 
     with consolidated.open("a", encoding="utf-8") as out, pairs_path.open("a", encoding="utf-8") as pairs_out:
         for repo in queue:
-            if time.time() > deadline or total_chars >= max_total_chars:
+            if time.time() > deadline or new_chars >= max_total_chars:
                 break
             if repo in done_repos:
                 continue
@@ -231,7 +233,7 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
             repo_dir = EXTERNAL / repo.replace("/", "__")
             used_files = []
             for filename in files:
-                if time.time() > deadline or repo_chars >= per_dataset_chars or total_chars >= max_total_chars:
+                if time.time() > deadline or repo_chars >= per_dataset_chars or new_chars >= max_total_chars:
                     break
                 target = repo_dir / Path(filename).name
                 if not target.exists():
@@ -248,7 +250,8 @@ def collect(minutes: float = 40.0, max_total_chars: int = 250_000_000,
                     out.write(text + "\n")
                     repo_chars += len(text)
                     total_chars += len(text)
-                    if repo_chars - before > per_dataset_chars or total_chars >= max_total_chars or time.time() > deadline:
+                    new_chars += len(text)
+                    if repo_chars - before > per_dataset_chars or new_chars >= max_total_chars or time.time() > deadline:
                         break
                 # spelling-correction pairs (real edit streams)
                 for wrong, correct in iter_pairs(target):

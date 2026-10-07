@@ -25,8 +25,7 @@ sys.path.insert(0, str(BASE))
 from enc_model import PRESETS, TinyEditEncoder  # noqa: E402
 from synth import load_samples  # noqa: E402
 
-ART = BASE / "artifacts" / "enc-s-full"
-OUT = ART / "browser"
+BASE_ART = BASE / "artifacts"
 SEQ = BASE / "data" / "seq"
 ATOM_CLASSES = ["NO_EDIT", "FIX_CHAR", "DEL_CHAR", "INS_CHAR", "DEL_SPAN", "INS_SPAN_COPY", "FMT_BULLET"]
 
@@ -36,6 +35,13 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
+
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--art", default="enc-s-full")
+    art_name = parser.parse_args().art
+    ART = BASE_ART / art_name
+    OUT = ART / "browser"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     checkpoint = torch.load(ART / "model.pt", map_location=device, weights_only=False)

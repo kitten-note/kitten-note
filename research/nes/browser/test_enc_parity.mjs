@@ -13,7 +13,8 @@ import { dirname, join } from 'node:path';
 import { EncModel } from './enc.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const bundle = join(here, '..', 'artifacts', 'enc-s-full', 'browser');
+const bundleName = process.argv[2] || 'enc-s-full';
+const bundle = join(here, '..', 'artifacts', bundleName, 'browser');
 
 const toArrayBuffer = (buffer) =>
     buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);

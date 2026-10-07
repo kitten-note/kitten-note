@@ -30,11 +30,104 @@ import numpy as np
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from atoms import CLASS_TO_ID  # noqa: E402
+from atoms import CLASS_TO_ID, apply_atom, diff_to_atoms  # noqa: E402
 from big_data import load_lines, segment  # noqa: E402
 from synth import Synthesizer  # noqa: E402
 
 SEQ_DIR = BASE / "data" / "seq"
+REV_PAIRS = BASE / "data" / "external" / "rev_pairs.jsonl"
+
+
+def _atom_anchor(atom: dict) -> int:
+    kind = atom["type"]
+    if kind in ("FIX_CHAR", "DEL_CHAR", "INS_CHAR", "INS_SPAN_COPY"):
+        return atom["pos"]
+    if kind == "DEL_SPAN":
+        return atom["start"]
+    if kind == "FMT_BULLET":
+        return atom["line_start"]
+    return 0
+
+
+def _atom_span(atom: dict) -> tuple:
+    kind = atom["type"]
+    if kind in ("FIX_CHAR", "DEL_CHAR"):
+        return atom["pos"], atom["pos"] + 1
+    if kind in ("INS_CHAR", "INS_SPAN_COPY"):
+        return atom["pos"], atom["pos"]
+    if kind == "DEL_SPAN":
+        return atom["start"], atom["end"]
+    if kind == "FMT_BULLET":
+        return atom["line_start"], atom["line_start"]
+    return 0, 0
+
+
+def _shift_atom(atom: dict, delta: int) -> dict:
+    out = dict(atom)
+    kind = out["type"]
+    if kind in ("FIX_CHAR", "DEL_CHAR", "INS_CHAR", "INS_SPAN_COPY"):
+        out["pos"] = out["pos"] + delta
+    elif kind == "DEL_SPAN":
+        out["start"] = out["start"] + delta
+        out["end"] = out["end"] + delta
+    elif kind == "FMT_BULLET":
+        out["line_start"] = out["line_start"] + delta
+    return out
+
+
+def load_rev_labeled(cap_windows: int = 8000, window: int = 240) -> List:
+    """Real human edits (wiki revisions) as gap-labeled segments.
+
+    Full articles don't fit the encoder window: cut one window per edit
+    covering the atom span plus context, remap positions, re-validate.
+    """
+    items = []
+    seen = set()
+    if not REV_PAIRS.exists():
+        return items
+    with REV_PAIRS.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if len(items) >= cap_windows:
+                break
+            try:
+                item = json.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            wrong, correct = item.get("wrong", ""), item.get("correct", "")
+            if len(wrong) < 24 or wrong == correct:
+                continue
+            try:
+                atoms = diff_to_atoms(wrong, correct, max_ops=3)
+            except Exception:  # noqa: BLE001
+                continue
+            if not (1 <= len(atoms) <= 3):
+                continue
+            if any(a.get("type") not in CLASS_TO_ID or a["type"] == "NO_EDIT" for a in atoms):
+                continue
+            for atom in atoms:
+                if len(items) >= cap_windows:
+                    break
+                start_span, end_span = _atom_span(atom)
+                start = max(0, start_span - 100)
+                end = min(len(wrong), max(end_span + 100, start + 24))
+                if end - start > 280 or end - start < 24:
+                    continue
+                piece = wrong[start:end]
+                if piece in seen:
+                    continue
+                seen.add(piece)
+                remapped = _shift_atom(atom, -start)
+                test = apply_atom(piece, remapped)
+                if test is None:
+                    continue
+                labels, _ = gap_labels(
+                    piece, [{"atom": remapped, "label": CLASS_TO_ID[remapped["type"]]}])
+                if labels.sum() == 0:
+                    continue
+                items.append((piece, labels))
+    return items
+
+
 MAXLEN = 288            # tokens incl. <S>
 PAD, UNK, BOS = 0, 1, 2
 MAX_VOCAB = 15000
@@ -84,7 +177,8 @@ def gap_labels(noisy: str, samples: List[Dict]) -> Tuple[np.ndarray, int]:
     return labels, collisions
 
 
-def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 20261007) -> Dict:
+def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 20261007,
+          short_n: int = 2) -> Dict:
     SEQ_DIR.mkdir(parents=True, exist_ok=True)
     lines = load_lines()
     print(f"[seq] text lines: {len(lines)}", flush=True)
@@ -102,21 +196,21 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     scanned = 0
 
     for line in lines:
-        if len(edited) >= max_segments or time.time() > deadline:
+        if (len(edited) >= max_segments and len(clean) >= 15000) or time.time() > deadline:
             break
         pieces = list(segment(line))
         # Short-text regime (42-60 chars): the app sees short notes/chat text,
         # but synthesis previously only saw 60-260 char pieces. Slices below
         # 42 chars are skipped (synthesis needs 2*EDGE+10 chars of context).
         if len(line) >= 50:
-            for _ in range(2):
+            for _ in range(short_n):
                 start = int(rng.integers(0, len(line) - 42))
                 end = start + int(rng.integers(42, min(61, len(line) - start + 1)))
                 cand = " ".join(line[start:end].split())
                 if 42 <= len(cand) <= 60:
                     pieces.append(cand)
         for piece in pieces:
-            if len(edited) >= max_segments or time.time() > deadline:
+            if (len(edited) >= max_segments and len(clean) >= 15000) or time.time() > deadline:
                 break
             scanned += 1
             # Explicit clean segments (raw text, all-zero labels): the
@@ -143,6 +237,10 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     print(f"[seq] scanned {scanned} pieces -> {len(edited)} edited + {len(clean)} clean "
           f"(collisions {collisions})", flush=True)
 
+    rev_items = load_rev_labeled()
+    print(f"[seq] real revision windows: {len(rev_items)}", flush=True)
+    edited.extend(rev_items)
+
     rng = np.random.default_rng(seed)
     edited_ids = rng.permutation(len(edited))
     val_take = max(100, len(edited) // 50)
@@ -167,6 +265,7 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     stats = {
         "train_segments": len(train_items),
         "val_segments": len(val_items),
+        "rev_windows": len(rev_items),
         "vocab": len(stoi),
         "maxlen": MAXLEN,
         "train_position_counts": {str(k): int(v) for k, v in sorted(counts.items())},
@@ -181,4 +280,9 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
-    build()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--short-n", type=int, default=2)
+    parser.add_argument("--max-segments", type=int, default=60_000)
+    build(max_segments=parser.parse_args().max_segments,
+          short_n=parser.parse_args().short_n)

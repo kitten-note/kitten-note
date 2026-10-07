@@ -29,7 +29,7 @@ API = "https://zh.wikipedia.org/w/api.php"
 UA = "KittenNoteResearch/0.1 (NES research; contact via repo)"
 OUT = BASE / "data" / "external" / "rev_pairs.jsonl"
 PROGRESS = BASE / "data" / "external" / "rev_progress.json"
-DELAY = 2.0
+DELAY = 3.0
 
 
 def api(params: dict, retries: int = 4):

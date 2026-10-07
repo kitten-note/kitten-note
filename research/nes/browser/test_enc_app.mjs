@@ -14,7 +14,8 @@ import { dirname, join } from 'node:path';
 import { EncEngine, applyAtom } from '../../../js/enc-engine.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const bundle = join(here, '..', 'artifacts', 'enc-s-full', 'browser');
+const bundleName = process.argv[2] || 'enc-s-full';
+const bundle = join(here, '..', 'artifacts', bundleName, 'browser');
 const appEft = join(here, '../../../assets/eft');
 
 const toArrayBuffer = (buffer) =>
