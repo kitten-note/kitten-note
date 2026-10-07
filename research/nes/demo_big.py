@@ -190,7 +190,7 @@ def main() -> None:
     parser.add_argument("--stdin", action="store_true")
     parser.add_argument("--examples", action="store_true")
     parser.add_argument("--sample", type=int, default=0)
-    parser.add_argument("--threshold", type=float, default=6.0)
+    parser.add_argument("--threshold", type=float, default=4.0)
     parser.add_argument("--top", type=int, default=3)
     args = parser.parse_args()
 

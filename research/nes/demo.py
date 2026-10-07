@@ -42,6 +42,30 @@ EXAMPLES = [
 DESTRUCTIVE = {"DEL_CHAR", "DEL_SPAN", "FMT_BULLET"}
 DESTRUCTIVE_MIN_CONF = 0.55           # policy layer (L3): deletions need corroboration
 
+_CONFUSION = None
+
+
+def load_confusion() -> dict:
+    """Human-curated common-confusion table (shared with the app engine)."""
+    global _CONFUSION
+    if _CONFUSION is None:
+        path = BASE / ".." / ".." / "assets" / "eft" / "confusion.json"
+        try:
+            raw = json.loads(path.resolve().read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raw = {}
+        table: dict = {}
+        for char, alts in raw.items():
+            for alt in alts or []:
+                table.setdefault(char, [])
+                if alt not in table[char]:
+                    table[char].append(alt)
+                table.setdefault(alt, [])
+                if char not in table[alt]:
+                    table[alt].append(char)
+        _CONFUSION = table
+    return _CONFUSION
+
 
 def load_content_index():
     from corpus import load_corpus
@@ -53,8 +77,16 @@ def load_content_index():
 
 
 def resolve_atom(kind: str, document: str, pos: int, index) -> dict | None:
-    """Content-layer payload resolution + type check (zero hallucination)."""
+    """Content-layer payload resolution + type check (zero hallucination).
+
+    FIX_CHAR tries the human-curated confusion table first (high precision
+    by construction); the n-gram index is only a fallback.
+    """
     if kind == "FIX_CHAR":
+        current = document[pos] if 0 <= pos < len(document) else ""
+        for char in load_confusion().get(current, []):
+            if char != current:
+                return {"type": "FIX_CHAR", "pos": pos, "char": char}
         if index is not None:
             for char, _count in index.propose_next(document[:pos], top=3):
                 if char != document[pos] and char in LITERAL_CHARS and not char.isspace():

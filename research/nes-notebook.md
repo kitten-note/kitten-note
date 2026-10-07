@@ -496,6 +496,16 @@ v1 的三个工程缺陷（v2 已修复）：
 - **接线**：`nes.js` 本地路径改用 EncEngine（v0 做 fallback）、自检样本在新引擎上验证通过（逗号修复第一名）、SW 缓存 v7、推理耗时约 185ms/90 字。
 - 产物：`assets/enc/`（10MB）、`research/nes/browser/{enc.mjs,test_enc_parity.mjs,test_enc_app.mjs}`。
 
+### 12.3 真实数据第一轮：修订流 + full5（同日）
+
+- **修订流抓取**：礼貌抓取中文维基连续修订对（3 秒间隔 + 退避 + 断点续跑），两轮共 **1,028 对**（API 429 限流是主要成本）。成分偏斜：INS_SPAN_COPY 813 / DEL_SPAN 345 / FIX 111 / DEL 76 / INS 86——修订多为内容增删，错别字修复是少数。
+- **开窗接入**（`load_rev_labeled`）：长文章按原子 span 切 240 字窗、位置重映射、重新校验 `apply_atom`；832 对 → ~2,000 窗。
+- **消融 E1**：短切片（42–60 字随机裁断）被证实**伤害扫掠**（full2/full3 跌到 0.215/0.21；关掉后 full4 回到 0.26/0.25）——随机裁断破坏句子边界，教坏定位。`seq_data.py` 加 `--short-n` 开关，默认仍保留（短文本覆盖的未来价值待验证，当前冠军配方 short-n=0）。
+- **full5**（短切片关 + 709 修订窗 + clean 配额修复）：扫掠 **0.2725 / 0.245**，app T=4 精度 **73%**（22 触发/16 命中）——**新冠军，已发版**（`assets/enc/` + SW v9）。
+- **验证层已死**（平息值实验）：真修复与垃圾载荷平息值相同（2.89 vs 2.90）——复查分不出对错，整层删除。替换为**混淆表优先载荷**（FIX 只用人类高频错别字对 + 标点对；n-gram 稀有字垃圾类被消灭）。
+- **实现期 bug**：`demo_enc.suggest` 用 `np.int64` 做 pos，`apply_atom` 的 `isinstance(pos, int)` 静默全灭 FIX/DEL（与浏览器端 code-point 切片 bug 同类：跨语言整数语义）。
+- **用户实测**：“反动整治→反动政治”精确修复（整→政，pos 19，log-odds 3.29）；“正动派”（正→反）模型完全看不见——修订数据中错别字修复样本太少，下一轮需 CSC/修订双管齐下。
+
 ## 11. 应用集成：v0 预测器落地（2026-10-07）
 
 - **`assets/eft/`**：浏览器 bundle（`eft.js` 运行时 + softmax/prototypes/base + `content.json` 字符表，约 6MB），金标向量 200/200 逐位对齐（`browser/test_infer.mjs`）。研究侧原文件为 `eft.mjs`，应用侧改名 `.js` 以兼容 `python -m http.server` 等不识别 `.mjs` MIME 的服务器。
