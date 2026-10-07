@@ -21,8 +21,8 @@
  * Handles offline caching and PWA functionality
  */
 
-const SHELL_CACHE = 'kitten-note-shell-v6';
-const RUNTIME_CACHE = 'kitten-note-runtime-v6';
+const SHELL_CACHE = 'kitten-note-shell-v7';
+const RUNTIME_CACHE = 'kitten-note-runtime-v7';
 
 // Core shell assets precached on install.
 // Individual failures are tolerated by the per-asset allSettled below.
@@ -43,6 +43,7 @@ const SHELL_ASSETS = [
     './js/ink-editor.js',
     './js/nes.js',
     './js/eft-engine.js',
+    './js/enc-engine.js',
     './js/opfs-storage.js',
     './js/settings.js',
     './js/sync.js',
@@ -88,7 +89,12 @@ const SHELL_ASSETS = [
     './assets/eft/softmax.bin',
     './assets/eft/prototypes.bin',
     './assets/eft/base.bin',
-    './assets/eft/content.json'
+    './assets/eft/content.json',
+    // Built-in EFT-v1 encoder (S-full, single forward pass per document)
+    './assets/enc/enc.js',
+    './assets/enc/model.json',
+    './assets/enc/weights.bin',
+    './assets/enc/vocab.json'
 ];
 
 const COI_PARAM = 'coi';

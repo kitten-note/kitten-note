@@ -472,6 +472,30 @@ v1 的三个工程缺陷（v2 已修复）：
 
 **诚实注记**：编码器训练用了全部语料行（无文档级留出），与 test.jsonl 源文档存在文本级重叠；depth-1 的分片划分同样是行级而非文档级。两者对比是同条件 apples-to-apples，但论文口径需补文档级划分。
 
+### 12.1 INS 攻坚：诊断 → 权重胜利 → focal 反例（同日）
+
+**诊断**（`diag_enc.py`，S-sqrt 在 200 验证段上）：真 INS 位置上正确类别**排第 2（16/33、15/29），从不垫底**——是校准/竞争问题，不是表示问题。模型"看见"了插入信号，只是 NO_EDIT 永远压它一头。
+
+**对照实验**（同 400 窗扫掠，A2000）：
+
+| 变体 | INS/COPY 召回 | 扫掠定位/类别 | 结论 |
+|---|---|---|---|
+| S sqrt（基线） | 0.005 / 0.0 | 0.2325 / 0.205 | — |
+| **S full 权重** | **0.453 / 0.518** | **0.2625 / 0.24** | **冠军**（位置精度跌到 0.34、过量开火，但建议系统要的是召回+下游阈值） |
+| S focal（γ=2） | 0.0 / 0.0 | 0.1875 / 0.1725 | **反例**：4 轮内 focal 无效，记入论文 |
+| M sqrt（7M） | 0.014 / 0.0 | 0.26 / 0.23 | 容量不是杠杆 |
+| M full（7M） | 0.355 / 0.592 | 0.2525 / 0.2325 | 召回更高但 COPY 精度崩（11,640 预测 vs 29 真值），扫掠不如 S-full |
+
+**M-full 诊断**：INS 真位置 rank-1 达 15/33、20/29（校准已修复），但过量开火拉低扫掠——阈值可调空间留给部署层。
+
+### 12.2 冠军送进浏览器（同日）
+
+- **导出**：`export_enc.py` → fp32 `weights.bin` 10MB + `vocab.json` + `model.json` + 20 窗 torch logits 金标。
+- **JS 运行时** `browser/enc.mjs`（应用侧 `assets/enc/enc.js`）：embedding + 4×(pre-norm MHA + FFN) + head；实现期抓 3 个真 bug：① Linear 权重行主序当列主序用（差一个转置，drift 10.5）；② torch 默认激活是 **ReLU** 不是 GELU（drift 7.5→3e-6）；③ confidence 公式多乘一次（6680→0.999）。**Parity：drift 3.2e-6，argmax 1672/1672**。
+- **应用引擎** `js/enc-engine.js`：整文档 1 次前向 → gap 标注 → DEL_SPAN 连续段合并 → 复用 v0 内容层补全 + `apply_atom` 类型检查；INS_SPAN_COPY/FMT_BULLET 暂禁（缺 span 表）。默认阈值 T=8（120 留出样本校准：触发 39、类命中 27、精度 69%、类型检查 100% 通过；T=4 时 41 命中）。
+- **接线**：`nes.js` 本地路径改用 EncEngine（v0 做 fallback）、自检样本在新引擎上验证通过（逗号修复第一名）、SW 缓存 v7、推理耗时约 185ms/90 字。
+- 产物：`assets/enc/`（10MB）、`research/nes/browser/{enc.mjs,test_enc_parity.mjs,test_enc_app.mjs}`。
+
 ## 11. 应用集成：v0 预测器落地（2026-10-07）
 
 - **`assets/eft/`**：浏览器 bundle（`eft.js` 运行时 + softmax/prototypes/base + `content.json` 字符表，约 6MB），金标向量 200/200 逐位对齐（`browser/test_infer.mjs`）。研究侧原文件为 `eft.mjs`，应用侧改名 `.js` 以兼容 `python -m http.server` 等不识别 `.mjs` MIME 的服务器。

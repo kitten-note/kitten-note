@@ -1,0 +1,353 @@
+{
+  "version": "eft-enc-v1",
+  "preset": "S",
+  "classes": [
+    "NO_EDIT",
+    "FIX_CHAR",
+    "DEL_CHAR",
+    "INS_CHAR",
+    "DEL_SPAN",
+    "INS_SPAN_COPY",
+    "FMT_BULLET"
+  ],
+  "d": 128,
+  "layers": 4,
+  "heads": 4,
+  "ffn": 256,
+  "maxlen": 288,
+  "vocab_size": 15003,
+  "activation": "gelu",
+  "tensors": {
+    "tok": {
+      "offset": 0,
+      "shape": [
+        15003,
+        128
+      ]
+    },
+    "pos": {
+      "offset": 7681536,
+      "shape": [
+        288,
+        128
+      ]
+    },
+    "L0.norm1w": {
+      "offset": 7828992,
+      "shape": [
+        128
+      ]
+    },
+    "L0.norm1b": {
+      "offset": 7829504,
+      "shape": [
+        128
+      ]
+    },
+    "L0.inprojw": {
+      "offset": 7830016,
+      "shape": [
+        384,
+        128
+      ]
+    },
+    "L0.inprojb": {
+      "offset": 8026624,
+      "shape": [
+        384
+      ]
+    },
+    "L0.outw": {
+      "offset": 8028160,
+      "shape": [
+        128,
+        128
+      ]
+    },
+    "L0.outb": {
+      "offset": 8093696,
+      "shape": [
+        128
+      ]
+    },
+    "L0.norm2w": {
+      "offset": 8094208,
+      "shape": [
+        128
+      ]
+    },
+    "L0.norm2b": {
+      "offset": 8094720,
+      "shape": [
+        128
+      ]
+    },
+    "L0.ff1w": {
+      "offset": 8095232,
+      "shape": [
+        256,
+        128
+      ]
+    },
+    "L0.ff1b": {
+      "offset": 8226304,
+      "shape": [
+        256
+      ]
+    },
+    "L0.ff2w": {
+      "offset": 8227328,
+      "shape": [
+        128,
+        256
+      ]
+    },
+    "L0.ff2b": {
+      "offset": 8358400,
+      "shape": [
+        128
+      ]
+    },
+    "L1.norm1w": {
+      "offset": 8358912,
+      "shape": [
+        128
+      ]
+    },
+    "L1.norm1b": {
+      "offset": 8359424,
+      "shape": [
+        128
+      ]
+    },
+    "L1.inprojw": {
+      "offset": 8359936,
+      "shape": [
+        384,
+        128
+      ]
+    },
+    "L1.inprojb": {
+      "offset": 8556544,
+      "shape": [
+        384
+      ]
+    },
+    "L1.outw": {
+      "offset": 8558080,
+      "shape": [
+        128,
+        128
+      ]
+    },
+    "L1.outb": {
+      "offset": 8623616,
+      "shape": [
+        128
+      ]
+    },
+    "L1.norm2w": {
+      "offset": 8624128,
+      "shape": [
+        128
+      ]
+    },
+    "L1.norm2b": {
+      "offset": 8624640,
+      "shape": [
+        128
+      ]
+    },
+    "L1.ff1w": {
+      "offset": 8625152,
+      "shape": [
+        256,
+        128
+      ]
+    },
+    "L1.ff1b": {
+      "offset": 8756224,
+      "shape": [
+        256
+      ]
+    },
+    "L1.ff2w": {
+      "offset": 8757248,
+      "shape": [
+        128,
+        256
+      ]
+    },
+    "L1.ff2b": {
+      "offset": 8888320,
+      "shape": [
+        128
+      ]
+    },
+    "L2.norm1w": {
+      "offset": 8888832,
+      "shape": [
+        128
+      ]
+    },
+    "L2.norm1b": {
+      "offset": 8889344,
+      "shape": [
+        128
+      ]
+    },
+    "L2.inprojw": {
+      "offset": 8889856,
+      "shape": [
+        384,
+        128
+      ]
+    },
+    "L2.inprojb": {
+      "offset": 9086464,
+      "shape": [
+        384
+      ]
+    },
+    "L2.outw": {
+      "offset": 9088000,
+      "shape": [
+        128,
+        128
+      ]
+    },
+    "L2.outb": {
+      "offset": 9153536,
+      "shape": [
+        128
+      ]
+    },
+    "L2.norm2w": {
+      "offset": 9154048,
+      "shape": [
+        128
+      ]
+    },
+    "L2.norm2b": {
+      "offset": 9154560,
+      "shape": [
+        128
+      ]
+    },
+    "L2.ff1w": {
+      "offset": 9155072,
+      "shape": [
+        256,
+        128
+      ]
+    },
+    "L2.ff1b": {
+      "offset": 9286144,
+      "shape": [
+        256
+      ]
+    },
+    "L2.ff2w": {
+      "offset": 9287168,
+      "shape": [
+        128,
+        256
+      ]
+    },
+    "L2.ff2b": {
+      "offset": 9418240,
+      "shape": [
+        128
+      ]
+    },
+    "L3.norm1w": {
+      "offset": 9418752,
+      "shape": [
+        128
+      ]
+    },
+    "L3.norm1b": {
+      "offset": 9419264,
+      "shape": [
+        128
+      ]
+    },
+    "L3.inprojw": {
+      "offset": 9419776,
+      "shape": [
+        384,
+        128
+      ]
+    },
+    "L3.inprojb": {
+      "offset": 9616384,
+      "shape": [
+        384
+      ]
+    },
+    "L3.outw": {
+      "offset": 9617920,
+      "shape": [
+        128,
+        128
+      ]
+    },
+    "L3.outb": {
+      "offset": 9683456,
+      "shape": [
+        128
+      ]
+    },
+    "L3.norm2w": {
+      "offset": 9683968,
+      "shape": [
+        128
+      ]
+    },
+    "L3.norm2b": {
+      "offset": 9684480,
+      "shape": [
+        128
+      ]
+    },
+    "L3.ff1w": {
+      "offset": 9684992,
+      "shape": [
+        256,
+        128
+      ]
+    },
+    "L3.ff1b": {
+      "offset": 9816064,
+      "shape": [
+        256
+      ]
+    },
+    "L3.ff2w": {
+      "offset": 9817088,
+      "shape": [
+        128,
+        256
+      ]
+    },
+    "L3.ff2b": {
+      "offset": 9948160,
+      "shape": [
+        128
+      ]
+    },
+    "headw": {
+      "offset": 9948672,
+      "shape": [
+        7,
+        128
+      ]
+    },
+    "headb": {
+      "offset": 9952256,
+      "shape": [
+        7
+      ]
+    }
+  }
+}

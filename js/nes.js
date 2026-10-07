@@ -26,7 +26,8 @@
  */
 
 import { Toast } from './toast.js';
-import { EftEngine, atomEditRange } from './eft-engine.js';
+import { EncEngine, atomEditRange } from './enc-engine.js';
+import { EftEngine } from './eft-engine.js';
 
 export class NESManager {
     constructor(app) {
@@ -35,8 +36,9 @@ export class NESManager {
         this.delay = 800;
         this.debounceTimer = null;
         this.currentSuggestion = null;   // legacy inline completion (api mode)
-        this.editSuggestion = null;      // EFT typed edit suggestion (local mode)
-        this.eftEngine = null;
+        this.editSuggestion = null;      // typed edit suggestion (local mode)
+        this.engine = null;              // EncEngine (v1) with EftEngine (v0) fallback
+        this.engineName = '';
         this.isModelLoaded = false;
         this.isInferring = false;
         this.inferenceId = 0;
@@ -168,7 +170,7 @@ export class NESManager {
         if (!this.isModelLoaded) {
             await this.reloadModel();
         }
-        if (!this.eftEngine) {
+        if (!this.engine) {
             this.app.logger?.warn('NES 已启用但预测器未就绪：可运行"自检"或查看控制台错误。');
         }
     }
@@ -220,17 +222,23 @@ export class NESManager {
     }
 
     async ensureEngine() {
-        if (this.eftEngine) return this.eftEngine;
+        if (this.engine) return this.engine;
         const started = performance.now();
-        this.app.logger?.info('NES 正在加载内置预测器（assets/eft/）…');
-        this.eftEngine = await EftEngine.load('./assets/eft/');
-        const meta = this.eftEngine.model.meta || {};
-        const gate = meta.gate_thresholds?.softmax;
+        // Primary: EFT-v1 contextual encoder (single forward pass per document).
+        try {
+            this.app.logger?.info('NES 正在加载内置编码器预测器（assets/enc/）…');
+            this.engine = await EncEngine.load('./assets/enc/');
+            this.engineName = 'enc-v1';
+        } catch (encoderError) {
+            console.warn('[NES] encoder load failed, falling back to v0:', encoderError);
+            this.app.logger?.warn('NES 编码器加载失败，回退到 v0 预测器。');
+            this.engine = await EftEngine.load('./assets/eft/');
+            this.engineName = 'eft-v0';
+        }
         this.app.logger?.info(
-            `NES 预测器就绪：${(performance.now() - started).toFixed(0)} ms，` +
-            `特征维度 ${meta.feature_dim}，门控阈值 ${typeof gate === 'number' ? gate.toFixed(3) : 'n/a'}`
+            `NES 预测器就绪（${this.engineName}）：${(performance.now() - started).toFixed(0)} ms`
         );
-        return this.eftEngine;
+        return this.engine;
     }
 
     async loadModel() {
@@ -238,7 +246,7 @@ export class NESManager {
             await this.ensureEngine();
             this.onModelLoaded();
         } catch (error) {
-            console.error('[NES] EFT load failed:', error);
+            console.error('[NES] local engine load failed:', error);
             this.isModelLoaded = false;
             this.app.logger?.error('NES 内置预测器加载失败：' + (error?.message || error));
             Toast.error('内置预测器加载失败');
@@ -252,7 +260,7 @@ export class NESManager {
 
     scheduleInference() {
         if (!this.enabled) return;
-        if (this.mode === 'local' && !this.eftEngine) {
+        if (this.mode === 'local' && !this.engine) {
             console.warn('[NES] inference skipped: predictor not loaded yet');
             return;
         }
@@ -278,7 +286,7 @@ export class NESManager {
     async runInference() {
         if (!this.enabled) return;
 
-        if (this.mode === 'local' && !this.eftEngine) return;
+        if (this.mode === 'local' && !this.engine) return;
         if (this.mode === 'api' && (!this.apiUrl || !this.apiKey)) return;
 
         if (this.isInferring) {
@@ -322,7 +330,7 @@ export class NESManager {
                     this.setStatus('idle');
                 }
             } else {
-                this.runEftInference(textBefore, textAfter, requestId);
+                this.runLocalInference(textBefore, textAfter, requestId);
             }
 
             this.app.logger?.info('I noticed that NES finished thinking.');
@@ -337,10 +345,10 @@ export class NESManager {
         }
     }
 
-    runEftInference(textBefore, textAfter, requestId) {
+    runLocalInference(textBefore, textAfter, requestId) {
         const document = textBefore + textAfter;
         const started = performance.now();
-        const details = this.eftEngine.suggestDetailed(document, textBefore.length, { maxResults: 1 });
+        const details = this.engine.suggestDetailed(document, textBefore.length, { maxResults: 1 });
         const elapsed = performance.now() - started;
 
         // Full sweep trace in the console; compact summary in the log overlay.

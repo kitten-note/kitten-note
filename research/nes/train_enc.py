@@ -28,6 +28,27 @@ from synth import load_samples  # noqa: E402
 SEQ = BASE / "data" / "seq"
 
 
+class FocalLoss(torch.nn.Module):
+    """Multi-class focal loss with optional per-class alpha and ignore index."""
+
+    def __init__(self, weight=None, gamma: float = 2.0, ignore_index: int = -100):
+        super().__init__()
+        self.weight = weight
+        self.gamma = gamma
+        self.ignore_index = ignore_index
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        valid = targets != self.ignore_index
+        logits, targets = logits[valid], targets[valid]
+        if targets.numel() == 0:
+            return logits.sum() * 0.0
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+        true_logp = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        true_p = true_logp.exp()
+        alpha = self.weight[targets] if self.weight is not None else 1.0
+        return (-alpha * (1.0 - true_p).pow(self.gamma) * true_logp).mean()
+
+
 def position_metrics(model, device, ids_all: np.ndarray, labels_all: np.ndarray,
                      max_batches: int = 40) -> dict:
     model.eval()
@@ -119,6 +140,8 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--minutes", type=float, default=30.0)
     parser.add_argument("--weight", default="sqrt", choices=["full", "sqrt", "none"])
+    parser.add_argument("--loss", default="ce", choices=["ce", "focal"])
+    parser.add_argument("--focal-gamma", type=float, default=2.0)
     parser.add_argument("--out-dir", default="")
     args = parser.parse_args()
 
@@ -145,8 +168,12 @@ def main() -> None:
         weights = np.ones_like(weights)
     weights = weights / weights.mean()
     print(f"[enc] position class weights ({args.weight}): {np.round(weights, 2).tolist()}", flush=True)
-    criterion = torch.nn.CrossEntropyLoss(
-        weight=torch.tensor(weights, dtype=torch.float32, device=device), ignore_index=-100)
+    class_weights = torch.tensor(weights, dtype=torch.float32, device=device)
+    if args.loss == "focal":
+        criterion = FocalLoss(weight=class_weights, gamma=args.focal_gamma, ignore_index=-100)
+    else:
+        criterion = torch.nn.CrossEntropyLoss(weight=class_weights, ignore_index=-100)
+    print(f"[enc] loss: {args.loss}", flush=True)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-2)
     rng = np.random.default_rng(20261007)
