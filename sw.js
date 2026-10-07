@@ -21,8 +21,8 @@
  * Handles offline caching and PWA functionality
  */
 
-const SHELL_CACHE = 'kitten-note-shell-v4';
-const RUNTIME_CACHE = 'kitten-note-runtime-v4';
+const SHELL_CACHE = 'kitten-note-shell-v5';
+const RUNTIME_CACHE = 'kitten-note-runtime-v5';
 
 // Core shell assets precached on install.
 // Individual failures are tolerated by the per-asset allSettled below.
@@ -83,7 +83,7 @@ const SHELL_ASSETS = [
     './assets/qrcode/qrcode-generator.min.js',
     './assets/qrcode/jsQR.min.js',
     // Built-in EFT predictor (v0 NES model)
-    './assets/eft/eft.mjs',
+    './assets/eft/eft.js',
     './assets/eft/model.json',
     './assets/eft/softmax.bin',
     './assets/eft/prototypes.bin',

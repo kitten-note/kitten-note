@@ -451,7 +451,7 @@ v1 的三个工程缺陷（v2 已修复）：
 
 ## 11. 应用集成：v0 预测器落地（2026-10-07）
 
-- **`assets/eft/`**：浏览器 bundle（`eft.mjs` 运行时 + softmax/prototypes/base + `content.json` 字符表，约 6MB），金标向量 200/200 逐位对齐（`browser/test_infer.mjs`）。
+- **`assets/eft/`**：浏览器 bundle（`eft.js` 运行时 + softmax/prototypes/base + `content.json` 字符表，约 6MB），金标向量 200/200 逐位对齐（`browser/test_infer.mjs`）。研究侧原文件为 `eft.mjs`，应用侧改名 `.js` 以兼容 `python -m http.server` 等不识别 `.mjs` MIME 的服务器。
 - **`js/eft-engine.js`**：类型化候选扫掠 + 逐类阈值 + copy-only 内容层 + `apply_atom` 镜像类型检查。v0 仅启用 **FIX_CHAR / DEL_CHAR / INS_CHAR / DEL_SPAN**；**FMT_BULLET 与 INS_SPAN_COPY 属结构操作，暂禁用**——它们作为局部窗口分类器会系统性误报（§10.7 的几何泄漏教训；行首乱加"- "就是症状）。
 - **`js/nes.js`**：本地模式 = EFT（建议卡片：Tab 接受 / Esc 忽略 / 按钮接受忽略）；API 模式保留（文本续写 + 标题生成）。
 - **编辑器**：新增 `applyPlainTextEdit`（按纯文本区间用 Range 手术应用编辑）。

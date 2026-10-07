@@ -19,7 +19,7 @@
 /**
  * KittenNote - EFT engine (v0 on-device next-edit predictor).
  *
- * Wraps assets/eft/eft.mjs, which is bit-identical to the Python research
+ * Wraps assets/eft/eft.js, which is bit-identical to the Python research
  * pipeline (golden vectors in research/nes/browser/test_infer.mjs):
  *
  *   typed candidate sweep -> gate (softmax, calibrated) -> per-class thresholds
@@ -33,7 +33,7 @@
  * classifiers - a documented v0 limitation).
  */
 
-import { EftModel } from '../assets/eft/eft.mjs';
+import { EftModel } from '../assets/eft/eft.js';
 
 const DESTRUCTIVE = new Set(['DEL_CHAR', 'DEL_SPAN']);
 const DESTRUCTIVE_MIN_CONFIDENCE = 0.55;
