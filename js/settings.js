@@ -155,6 +155,10 @@ export class SettingsManager {
         testApiBtn?.addEventListener('click', () => {
             this.app.nesManager?.testApiConnection();
         });
+
+        // Built-in EFT predictor self-test
+        const eftSelfTestBtn = document.getElementById('eft-selftest-btn');
+        eftSelfTestBtn?.addEventListener('click', () => this.app.nesManager?.runSelfTest());
         
         // Custom model import
         const importModelBtn = document.getElementById('import-custom-model-btn');
@@ -250,6 +254,11 @@ export class SettingsManager {
         this.app.nesManager?.setBackend(this.settings.nesBackend || 'cpu');
         
         // NES mode settings
+        // Migrate stale API-mode configs (no URL/key) to the built-in predictor.
+        if (this.settings.nesMode === 'api' && (!this.settings.nesApiUrl || !this.settings.nesApiKey)) {
+            this.settings.nesMode = 'local';
+            this.saveSettings();
+        }
         const nesModeSelect = document.getElementById('nes-mode');
         if (nesModeSelect) {
             nesModeSelect.value = this.settings.nesMode || 'local';

@@ -21,8 +21,8 @@
  * Handles offline caching and PWA functionality
  */
 
-const SHELL_CACHE = 'kitten-note-shell-v5';
-const RUNTIME_CACHE = 'kitten-note-runtime-v5';
+const SHELL_CACHE = 'kitten-note-shell-v6';
+const RUNTIME_CACHE = 'kitten-note-runtime-v6';
 
 // Core shell assets precached on install.
 // Individual failures are tolerated by the per-asset allSettled below.
@@ -146,6 +146,8 @@ function withCoiHeaders(response) {
 
 // Install event - precache the app shell, tolerating individual failures
 self.addEventListener('install', (event) => {
+    // Take over as soon as possible: fixes must not wait for a second reload.
+    self.skipWaiting();
     event.waitUntil(
         caches.open(SHELL_CACHE).then(async (cache) => {
             const results = await Promise.allSettled(

@@ -158,7 +158,7 @@ export class NESManager {
     async enable() {
         this.enabled = true;
         this.setStatus('idle');
-        this.app.logger?.info('I noticed that NES woke up and is ready.');
+        this.app.logger?.info(`NES 已启用（模式：${this.mode === 'local' ? '内置 EFT' : 'API'}）。`);
 
         if (this.mode === 'api') {
             this.isModelLoaded = true;
@@ -167,6 +167,9 @@ export class NESManager {
 
         if (!this.isModelLoaded) {
             await this.reloadModel();
+        }
+        if (!this.eftEngine) {
+            this.app.logger?.warn('NES 已启用但预测器未就绪：可运行"自检"或查看控制台错误。');
         }
     }
 
@@ -216,15 +219,28 @@ export class NESManager {
         // The engine stays cached: it is small (~6 MB) and instant to reuse.
     }
 
+    async ensureEngine() {
+        if (this.eftEngine) return this.eftEngine;
+        const started = performance.now();
+        this.app.logger?.info('NES 正在加载内置预测器（assets/eft/）…');
+        this.eftEngine = await EftEngine.load('./assets/eft/');
+        const meta = this.eftEngine.model.meta || {};
+        const gate = meta.gate_thresholds?.softmax;
+        this.app.logger?.info(
+            `NES 预测器就绪：${(performance.now() - started).toFixed(0)} ms，` +
+            `特征维度 ${meta.feature_dim}，门控阈值 ${typeof gate === 'number' ? gate.toFixed(3) : 'n/a'}`
+        );
+        return this.eftEngine;
+    }
+
     async loadModel() {
         try {
-            this.app.logger?.info('I noticed that NES is waking up the built-in EFT predictor.');
-            this.eftEngine = this.eftEngine || await EftEngine.load('./assets/eft/');
+            await this.ensureEngine();
             this.onModelLoaded();
         } catch (error) {
-            console.error('Failed to load EFT predictor:', error);
+            console.error('[NES] EFT load failed:', error);
             this.isModelLoaded = false;
-            this.app.logger?.warn('I noticed that the EFT predictor refused to load.', error);
+            this.app.logger?.error('NES 内置预测器加载失败：' + (error?.message || error));
             Toast.error('内置预测器加载失败');
         }
     }
@@ -237,19 +253,23 @@ export class NESManager {
     scheduleInference() {
         if (!this.enabled) return;
         if (this.mode === 'local' && !this.eftEngine) {
-            if (!this.warnedNoModel) {
-                this.app.logger?.warn('I noticed that NES cannot think without its predictor.');
-                this.warnedNoModel = true;
-            }
+            console.warn('[NES] inference skipped: predictor not loaded yet');
             return;
         }
         if (this.mode === 'api' && (!this.apiUrl || !this.apiKey)) {
+            console.warn('[NES] inference skipped: API mode is not configured');
             return;
         }
 
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
         }
+        console.debug('[NES] inference scheduled', {
+            enabled: this.enabled,
+            mode: this.mode,
+            engine: !!this.eftEngine,
+            delay: this.delay,
+        });
         this.debounceTimer = setTimeout(() => {
             this.runInference();
         }, this.delay);
@@ -319,17 +339,83 @@ export class NESManager {
 
     runEftInference(textBefore, textAfter, requestId) {
         const document = textBefore + textAfter;
-        const suggestions = this.eftEngine.suggest(document, textBefore.length, { maxResults: 1 });
+        const started = performance.now();
+        const details = this.eftEngine.suggestDetailed(document, textBefore.length, { maxResults: 1 });
+        const elapsed = performance.now() - started;
+
+        // Full sweep trace in the console; compact summary in the log overlay.
+        console.log('[NES] sweep', {
+            cursor: textBefore.length,
+            documentLength: document.length,
+            window: details.window,
+            positions: details.positions,
+            gateFired: details.gateFired,
+            passedFilters: details.passedFilters,
+            rejected: details.rejected,
+            best: details.best,
+            suggestions: details.suggestions,
+            ms: Math.round(elapsed),
+        });
 
         if (requestId !== this.currentInferenceId) return;
-        if (!suggestions.length) {
+
+        if (!details.suggestions.length) {
+            const best = details.best;
+            this.app.logger?.info(
+                `NES 扫描完成：${details.positions} 个位置，门控触发 ${details.gateFired}，通过筛选 ${details.passedFilters}；` +
+                (best
+                    ? `最佳候选 ${best.className} @${best.pos}（P=${best.editProbability.toFixed(3)}，conf=${best.confidence.toFixed(3)}）低于阈值。`
+                    : '窗口内无候选。')
+            );
             this.setStatus('idle');
             return;
         }
 
-        this.editSuggestion = suggestions[0];
+        this.editSuggestion = details.suggestions[0];
+        this.app.logger?.info(
+            `NES 建议：${this.editSuggestion.description}（${this.editSuggestion.className} @${this.editSuggestion.pos}，` +
+            `P=${this.editSuggestion.editProbability.toFixed(3)}，conf=${this.editSuggestion.confidence.toFixed(3)}，${Math.round(elapsed)} ms）`
+        );
         this.showEditSuggestion();
         this.setStatus('success');
+    }
+
+    async runSelfTest() {
+        // Known-good held-out sample: ASCII comma after "珠穆朗玛峰" must become
+        // the fullwidth "，" (the predictor fires FIX_CHAR with P≈0.999).
+        const sample = '卢克拉（尼泊爾語：लुक्ला），是尼泊爾萨加玛塔专区索卢昆布县的一个城镇。该地海拔2,860米，靠近珠穆朗玛峰,攀登珠峰者多经此地登峰。卢克拉在尼泊爾語中意为“有许多羊的地方”';
+        try {
+            await this.ensureEngine();
+        } catch (error) {
+            console.error('[NES] self-test: engine load failed', error);
+            this.app.logger?.error('NES 自检失败：预测器无法加载：' + (error?.message || error));
+            Toast.error('预测器加载失败，详见日志');
+            return;
+        }
+
+        const details = this.eftEngine.suggestDetailed(sample, sample.length, { maxResults: 3 });
+        console.log('[NES] self-test', details);
+        this.app.logger?.info(
+            `NES 自检：文本 ${sample.length} 字，扫描 ${details.positions} 位置，门控触发 ${details.gateFired}，` +
+            `通过筛选 ${details.passedFilters}，候选 ${details.suggestions.length} 个。`
+        );
+        for (const suggestion of details.suggestions) {
+            this.app.logger?.info(
+                `  ↳ ${suggestion.description}（${suggestion.className} @${suggestion.pos}，` +
+                `P=${suggestion.editProbability.toFixed(3)}，conf=${suggestion.confidence.toFixed(3)}）`
+            );
+        }
+        if (details.best) {
+            this.app.logger?.info(
+                `  最佳原始候选：${details.best.className} @${details.best.pos}（` +
+                `P=${details.best.editProbability.toFixed(3)}，conf=${details.best.confidence.toFixed(3)}）`
+            );
+        }
+        Toast.success(
+            details.suggestions.length
+                ? `自检通过：${details.suggestions.length} 个候选`
+                : '自检完成：引擎正常（当前样本无高置信建议，属正常）'
+        );
     }
 
     async runApiInference(textBefore, textAfter, requestId) {

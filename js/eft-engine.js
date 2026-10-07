@@ -205,39 +205,79 @@ export class EftEngine {
     }
 
     /**
-     * Sweep positions around the cursor and return the best typed suggestions.
-     * @returns {Array<{pos:number, className:string, editProbability:number,
-     *                  confidence:number, atom:object, description:string}>}
+     * Sweep positions around the cursor and return the best typed suggestions
+     * plus full diagnostics (for the log overlay / console).
      */
-    suggest(document, cursorOffset, { maxResults = 1 } = {}) {
-        if (typeof document !== 'string' || document.length < MIN_DOCUMENT_LENGTH) return [];
-        if (!this.model) return [];
+    suggestDetailed(document, cursorOffset, { maxResults = 1 } = {}) {
+        const details = {
+            documentLength: typeof document === 'string' ? document.length : 0,
+            window: null,
+            positions: 0,
+            gateFired: 0,
+            passedFilters: 0,
+            rejected: { gate: 0, disabledClass: 0, classThreshold: 0, destructive: 0, noPayload: 0, typeCheck: 0 },
+            best: null,
+            suggestions: [],
+        };
+        if (typeof document !== 'string' || document.length < MIN_DOCUMENT_LENGTH) return details;
+        if (!this.model) return details;
 
         const from = Math.max(0, cursorOffset - SWEEP_LEFT);
         const to = Math.min(document.length, cursorOffset + SWEEP_RIGHT);
-        const results = [];
+        details.window = { from, to };
 
         for (let pos = from; pos < to; pos++) {
+            details.positions += 1;
             const span = document[pos];
             if (!span || span === '\n') continue;
 
             const left = document.slice(Math.max(0, pos - 64), pos);
             const right = document.slice(pos + 1, pos + 33);
             const prediction = this.model.predict(left, span, right, { model: FEATURE_MODEL });
-            if (!prediction.fire) continue;
+
+            if (!details.best || prediction.editProbability > details.best.editProbability) {
+                details.best = {
+                    pos,
+                    className: prediction.class,
+                    editProbability: prediction.editProbability,
+                    confidence: prediction.confidence,
+                };
+            }
+
+            if (!prediction.fire) {
+                details.rejected.gate += 1;
+                continue;
+            }
+            details.gateFired += 1;
 
             const className = prediction.class;
-            if (className === 'NO_EDIT' || DISABLED_CLASSES.has(className)) continue;
+            if (className === 'NO_EDIT' || DISABLED_CLASSES.has(className)) {
+                details.rejected.disabledClass += 1;
+                continue;
+            }
 
             const classThreshold = this.model.meta.class_thresholds?.[className] ?? 0;
-            if (prediction.confidence < classThreshold) continue;
-            if (DESTRUCTIVE.has(className) && prediction.confidence < DESTRUCTIVE_MIN_CONFIDENCE) continue;
+            if (prediction.confidence < classThreshold) {
+                details.rejected.classThreshold += 1;
+                continue;
+            }
+            if (DESTRUCTIVE.has(className) && prediction.confidence < DESTRUCTIVE_MIN_CONFIDENCE) {
+                details.rejected.destructive += 1;
+                continue;
+            }
 
             const atom = this.resolveAtom(className, document, pos);
-            if (!atom) continue;
-            if (applyAtom(document, atom) === null) continue;
+            if (!atom) {
+                details.rejected.noPayload += 1;
+                continue;
+            }
+            if (applyAtom(document, atom) === null) {
+                details.rejected.typeCheck += 1;
+                continue;
+            }
 
-            results.push({
+            details.passedFilters += 1;
+            details.suggestions.push({
                 pos,
                 className,
                 editProbability: prediction.editProbability,
@@ -247,7 +287,17 @@ export class EftEngine {
             });
         }
 
-        results.sort((a, b) => b.editProbability - a.editProbability);
-        return results.slice(0, Math.max(1, maxResults));
+        details.suggestions.sort((a, b) => b.editProbability - a.editProbability);
+        details.suggestions = details.suggestions.slice(0, Math.max(1, maxResults));
+        return details;
+    }
+
+    /**
+     * Sweep positions around the cursor and return the best typed suggestions.
+     * @returns {Array<{pos:number, className:string, editProbability:number,
+     *                  confidence:number, atom:object, description:string}>}
+     */
+    suggest(document, cursorOffset, options) {
+        return this.suggestDetailed(document, cursorOffset, options).suggestions;
     }
 }
