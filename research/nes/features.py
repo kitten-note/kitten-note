@@ -18,7 +18,7 @@ from typing import List, Sequence
 import numpy as np
 
 FEATURE_DIM = 16384          # hashed feature bins
-FEATURE_VERSION = 2          # bump to invalidate feature caches
+FEATURE_VERSION = 3          # bump to invalidate feature caches
 HDC_DIM = 8192               # hypervector dimension (bits)
 HDC_BINS = 4096              # base-vector table size (ids are reduced mod this)
 HDC_SEED = 0xE7F0
@@ -60,6 +60,35 @@ def _distance_to_punct(side: str, cap: int = 8) -> int:
         if char in PUNCT or char == "\n":
             return distance
     return cap + 1
+
+
+def _run_length(left: str, span: str, right: str, cap: int = 32) -> int:
+    """Length of the punctuation-free run containing the boundary.
+
+    Counts trailing non-stop chars of `left`, plus `span` (when it contains no
+    stop char), plus leading non-stop chars of `right`. The core insertion
+    signal: a long clause with no punctuation nearby is where a missing comma
+    (INS_CHAR) or omitted phrase (INS_SPAN_COPY) hides.
+    """
+    stop = PUNCT | {" ", "\n", "\t"}
+    count = 0
+    for char in reversed(left):
+        if char in stop:
+            break
+        count += 1
+        if count >= cap:
+            return cap
+    if span and not any(char in stop for char in span):
+        count += len(span)
+        if count >= cap:
+            return cap
+    for char in right:
+        if char in stop:
+            break
+        count += 1
+        if count >= cap:
+            return cap
+    return min(count, cap)
 
 
 def fnv1a64(text: str) -> int:
@@ -105,6 +134,8 @@ def extract_feature_names(left: str, span: str, right: str, last_atom: str = "NO
     names.append(f"B2L:{left[-2:]}{span_char}")
     names.append(f"B2R:{span_char}{right[:2]}")
     names.append(f"XC:{_char_class(prev_char)}{_char_class(span_char if span else '')}{_char_class(next_char)}")
+    names.append(f"CPLEN:{min(_run_length(left, span, right) // 4, 6)}")
+    names.append(f"BND:{_char_class(prev_char)}{_char_class(next_char)}")
     names.append(f"LA:{last_atom}")
     return names
 

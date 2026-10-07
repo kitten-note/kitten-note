@@ -449,6 +449,29 @@ v1 的三个工程缺陷（v2 已修复）：
 
 **产物**：`artifacts/big-3ep-geo/`（model.pt 992MB / embedding_int8.npz 264MB / metrics.json / REPORT.md / candidate_sweep.json）；对照模型 `artifacts/big-3ep/`、`artifacts/big-3ep-noweight/`。
 
+## 12. 新架构 EFT-v1：上下文编码器（2026-10-07，当日验证）
+
+**为什么必须换架构**（三条已证伪链收敛）：加参数（2.6万→2.6亿）无效、加轮数（3→700）反效果、分布内 hard-negative 几乎挖不到（800 行仅 26 条）——猎奇行为是**表示能力**问题：逐位置独立分类 + 非上下文词袋特征，模型不会"读"，位置之间无竞争、无文档级联合推理。
+
+**Gap tagging 形式化**：n 字文档 → n+1 个 gap（gap i = 字符 i 之前）；FIX/DEL_CHAR 在字符 j → gap j+1；INS_CHAR/INS_SPAN_COPY 在 gap p → gap p；DEL_SPAN [s,e) → gaps s+1..e（推理时合并连续段）；FMT_BULLET 行首 L → gap L。输入 `[<S>, c0..]`，每 gap 一个 7 分类。**无 span 输入** → v0 的几何泄漏在结构上消失；干净段（全零标注）是天然 hard negative。
+
+**约束保持**：单次前向（每文档 1 次，原_depth-1 需 ~400 次窗口前向）、非自回归、类型化输出、从零训练、无 LLM。
+
+**预设档**：S 2.5M / M 7.1M / L 24.7M / XL 116.5M / **XXL 240.8M**（256M 量级研究位保留）。
+
+**S 版首跑**（73,800 段训练、1,200 段验证、A2000 上 6.8 分钟、2,308 步）：
+
+| 指标 | EFT-v1 S（2.5M） | depth-1 260M（几何平衡版） |
+|---|---|---|
+| 同 400 窗扫掠 position top-1 | **0.2325** | 0.2325 |
+| 同扫掠 class top-1 | 0.205 | 0.2225 |
+| val 位置 top-1 / gate AUC | 0.9886 / 0.8768 | 0.9097 / 0.9440 |
+| 逐类召回（位置级） | FIX 0.37 / DEL_CHAR 0.525 / **INS_CHAR 0.005 / COPY 0.0** / DEL_SPAN 0.998 | — |
+
+**结论**：100 倍参数差、扫掠定位打平——定位瓶颈确在表示层；但 INS 类在新架构下依然≈0（插入歧义 + 位置级类别极不平衡 13.8M:10k），是下一攻坚点。
+
+**诚实注记**：编码器训练用了全部语料行（无文档级留出），与 test.jsonl 源文档存在文本级重叠；depth-1 的分片划分同样是行级而非文档级。两者对比是同条件 apples-to-apples，但论文口径需补文档级划分。
+
 ## 11. 应用集成：v0 预测器落地（2026-10-07）
 
 - **`assets/eft/`**：浏览器 bundle（`eft.js` 运行时 + softmax/prototypes/base + `content.json` 字符表，约 6MB），金标向量 200/200 逐位对齐（`browser/test_infer.mjs`）。研究侧原文件为 `eft.mjs`，应用侧改名 `.js` 以兼容 `python -m http.server` 等不识别 `.mjs` MIME 的服务器。

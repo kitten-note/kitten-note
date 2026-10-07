@@ -54,6 +54,36 @@ function fnv1a64(text) {
     return h;
 }
 
+function runLength(left, span, right, cap = 32) {
+    // Mirror of features.py _run_length: punctuation-free run at the boundary.
+    const stop = (ch) => PUNCT.has(ch) || ch === ' ' || ch === '\n' || ch === '\t';
+    let count = 0;
+    const lchars = Array.from(left);
+    for (let i = lchars.length - 1; i >= 0; i--) {
+        if (stop(lchars[i])) break;
+        count++;
+        if (count >= cap) return cap;
+    }
+    const schars = Array.from(span);
+    if (schars.length > 0) {
+        let spanOk = true;
+        for (const ch of schars) {
+            if (stop(ch)) { spanOk = false; break; }
+        }
+        if (spanOk) {
+            count += schars.length;
+            if (count >= cap) return cap;
+        }
+    }
+    const rchars = Array.from(right);
+    for (const ch of rchars) {
+        if (stop(ch)) break;
+        count++;
+        if (count >= cap) return cap;
+    }
+    return Math.min(count, cap);
+}
+
 // Code-point aware slicing (mirror of Python's str slicing, which counts code points).
 const toChars = (s) => Array.from(s);
 const lastN = (s, n) => (n >= s.length ? s : toChars(s).slice(-n).join(''));
@@ -89,6 +119,8 @@ export function extractFeatureNames(left, span, right, lastAtom = 'NONE') {
     names.push(`B2L:${lastN(left, 2)}${spanChar}`);
     names.push(`B2R:${spanChar}${firstN(right, 2)}`);
     names.push(`XC:${charClass(prev)}${charClass(span ? spanChar : '')}${charClass(next)}`);
+    names.push(`CPLEN:${Math.min(Math.floor(runLength(left, span, right) / 4), 6)}`);
+    names.push(`BND:${charClass(prev)}${charClass(next)}`);
     names.push(`LA:${lastAtom}`);
     return names;
 }

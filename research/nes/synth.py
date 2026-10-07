@@ -171,7 +171,8 @@ class Synthesizer:
         return None
 
     # ---------- compose perturbations ----------
-    def make_doc_samples(self, doc: str, bullet_doc: bool = False) -> List[Dict]:
+    def make_doc_samples(self, doc: str, bullet_doc: bool = False,
+                         return_noisy: bool = False):
         doc = doc.strip()
         if len(doc) < 2 * EDGE + 10:
             return []
@@ -228,7 +229,7 @@ class Synthesizer:
                 break
 
         if not chosen:
-            return []
+            return ([], doc) if return_noisy else []
 
         # Build noisy doc by applying edits right-to-left (left positions stay valid).
         chosen.sort(key=lambda e: e["pos"], reverse=True)
@@ -305,7 +306,7 @@ class Synthesizer:
             if span is not None:
                 noisy_spans.append(span)
         samples.extend(self._no_edit_samples(noisy, noisy_spans, len(chosen)))
-        return samples
+        return (samples, noisy) if return_noisy else samples
 
     @staticmethod
     def _span_of(atom: Dict) -> Optional[Tuple[int, int]]:
