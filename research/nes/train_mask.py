@@ -226,7 +226,7 @@ def main() -> None:
             optimizer.step()
             step += 1
             if step % 100 == 0:
-                print(f"[mask] epoch {epoch} step {step} loss {float(loss):.4f}", flush=True)
+                print(f"[mask] epoch {epoch} step {step} loss {float(loss.detach()):.4f}", flush=True)
             if time.time() - last_ckpt > 600:
                 torch.save({"model": model.state_dict(), "step": step}, out_dir / "checkpoint.pt")
                 last_ckpt = time.time()
