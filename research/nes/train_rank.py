@@ -59,11 +59,14 @@ def main() -> None:
     parser.add_argument("--minutes", type=float, default=10.0)
     parser.add_argument("--batch", type=int, default=2048)
     parser.add_argument("--lr", type=float, default=0.5)
+    parser.add_argument("--data", default="rank_train.npz")
+    parser.add_argument("--out-dir", default="")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ART.mkdir(parents=True, exist_ok=True)
-    data = np.load(BASE / "data" / "rank" / "rank_train.npz")
+    out_dir = Path(args.out_dir) if args.out_dir else ART
+    out_dir.mkdir(parents=True, exist_ok=True)
+    data = np.load(BASE / "data" / "rank" / args.data)
     ids, offsets, labels = data["ids"], data["offsets"], data["labels"]
     print(f"[rank] samples {len(labels)} (pos rate {labels.mean():.3f})", flush=True)
 
@@ -111,10 +114,10 @@ def main() -> None:
         auc = float((ranks[labels[idx] == 1].sum() - positives * (positives - 1) / 2) / (positives * negatives))
         print(f"[rank] {name} AUC {auc:.4f}", flush=True)
 
-    torch.save({"model": model.state_dict()}, ART / "ranker.pt")
-    (ART / "metrics.json").write_text(json.dumps({"steps": step, "dim": RANK_DIM}, ensure_ascii=False, indent=2),
-                                      encoding="utf-8")
-    print(f"[rank] artifacts: {ART}", flush=True)
+    torch.save({"model": model.state_dict()}, out_dir / "ranker.pt")
+    (out_dir / "metrics.json").write_text(json.dumps({"steps": step, "dim": RANK_DIM}, ensure_ascii=False, indent=2),
+                                          encoding="utf-8")
+    print(f"[rank] artifacts: {out_dir}", flush=True)
 
 
 if __name__ == "__main__":
