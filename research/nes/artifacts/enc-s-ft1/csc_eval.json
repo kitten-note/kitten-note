@@ -1,11 +1,11 @@
 {
   "n": 1100,
   "error_items": 550,
-  "fired_rate": 0.8763636363636363,
-  "detection_rate": 0.2927272727272727,
-  "correction_rate": 0.02727272727272727,
+  "fired_rate": 0.6854545454545454,
+  "detection_rate": 0.2290909090909091,
+  "correction_rate": 0.014545454545454545,
   "clean_items": 550,
-  "clean_fire_rate": 0.84,
+  "clean_fire_rate": 0.6345454545454545,
   "threshold": 3.0,
   "note": "confusion table frozen; a few entries added after live probes (disclosed)",
   "miss_examples": [
@@ -20,12 +20,6 @@
       "correct": "到电影院前面，他们一定先要买票才可以进去。",
       "fired_pos": 13,
       "payload": "卖"
-    },
-    {
-      "wrong": "他们见面的时候，台生很高兴，应为外面真么那么热。",
-      "correct": "他们见面的时候，台生很高兴，因为外面怎么那么热。",
-      "fired_pos": 18,
-      "payload": "正"
     },
     {
       "wrong": "他带他的黑色的包，也他的照像机。",
@@ -52,22 +46,28 @@
       "payload": "那"
     },
     {
-      "wrong": "她回国以后，男朋友就把他拍的像片寄给她。",
-      "correct": "她回国以后，男朋友就把他拍的相片寄给她。",
-      "fired_pos": 14,
-      "payload": "向"
-    },
-    {
-      "wrong": "他们用电脑一边看那些像片一边聊天。",
-      "correct": "他们用电脑一边看那些相片一边聊天。",
-      "fired_pos": 10,
-      "payload": "向"
+      "wrong": "晚上时他跟她的男朋友用电脑聊天。",
+      "correct": "晚上时她跟她的男朋友用电脑聊天。",
+      "fired_pos": 4,
+      "payload": "根"
     },
     {
       "wrong": "现在我在台北西个半月了，周末的时候我跟同学练习中文还有一起去看电影。",
       "correct": "现在我在台北七个半月了，周末的时候我跟同学练习中文还有一起去看电影。",
       "fired_pos": 13,
       "payload": "抹"
+    },
+    {
+      "wrong": "他起来后，冲忙地赶到公车站，连衣服都没有换。",
+      "correct": "他起来后，匆忙地赶到公车站，连衣服都没有换。",
+      "fired_pos": 6,
+      "payload": "盲"
+    },
+    {
+      "wrong": "大明只好跟老驰说：「对不起！我知道了！」。",
+      "correct": "大明只好跟老师说：「对不起！我知道了！」。",
+      "fired_pos": 4,
+      "payload": "根"
     }
   ]
 }

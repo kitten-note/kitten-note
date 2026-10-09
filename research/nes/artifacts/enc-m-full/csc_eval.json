@@ -1,0 +1,25 @@
+{
+  "n": 1100,
+  "error_items": 550,
+  "fired_rate": 0.5618181818181818,
+  "detection_rate": 0.09272727272727273,
+  "correction_rate": 0.0018181818181818182,
+  "clean_items": 550,
+  "clean_fire_rate": 0.5509090909090909,
+  "threshold": 4.0,
+  "note": "confusion table frozen; a few entries added after live probes (disclosed)",
+  "miss_examples": [
+    {
+      "wrong": "如果我考上不太有名的大学的话也很难找工作，因为现在社会的公司都要比较有明大学毕业的人。",
+      "correct": "如果我考上不太有名的大学的话也很难找工作，因为现在社会的公司都要比较有名大学毕业的人。",
+      "fired_pos": 33,
+      "payload": "教"
+    },
+    {
+      "wrong": "如果是一个乐器的公司我当然要继续，可是对做蛋糕我没班法。",
+      "correct": "如果是一个乐器的公司我当然要继续，可是对做蛋糕我没办法。",
+      "fired_pos": 24,
+      "payload": "媒"
+    }
+  ]
+}

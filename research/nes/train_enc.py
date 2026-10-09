@@ -142,6 +142,7 @@ def main() -> None:
     parser.add_argument("--weight", default="sqrt", choices=["full", "sqrt", "none"])
     parser.add_argument("--loss", default="ce", choices=["ce", "focal"])
     parser.add_argument("--focal-gamma", type=float, default=2.0)
+    parser.add_argument("--init-from", default="")
     parser.add_argument("--out-dir", default="")
     args = parser.parse_args()
 
@@ -159,6 +160,24 @@ def main() -> None:
 
     model = build_model(args.preset, len(stoi), maxlen).to(device)
     print(f"[enc] preset {args.preset}: {model.parameter_count():,} params", flush=True)
+
+    if args.init_from:
+        source = torch.load(args.init_from, map_location=device, weights_only=False)["model"]
+        transferred = 0
+        own = model.state_dict()
+        for key, value in source.items():
+            if not key.startswith("backbone."):
+                continue
+            target = key[len("backbone."):]
+            if target.startswith("head."):
+                continue  # tagger head stays freshly initialized
+            if target.startswith("tok.weight") and value.shape[0] > own["tok.weight"].shape[0]:
+                value = value[:own["tok.weight"].shape[0]]  # drop the <MASK> row
+            if target in own and own[target].shape == value.shape:
+                own[target] = value
+                transferred += 1
+        model.load_state_dict(own)
+        print(f"[enc] transferred {transferred} tensors from {args.init_from} (fresh 7-class head)", flush=True)
 
     counts = np.bincount(train_labels[train_ids != 0].ravel(), minlength=7).astype(np.float64)
     weights = counts.sum() / np.maximum(counts, 1)
