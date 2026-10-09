@@ -56,12 +56,34 @@ def main() -> None:
     mask_model = MaskModel(len(mask_stoi), "S", mask_maxlen).to(device)
     mask_model.load_state_dict(torch.load(MASK, map_location=device, weights_only=False)["model"])
     mask_model.eval()
-    ranker = Ranker().to(device)
-    ranker.load_state_dict(torch.load(Path(args.ranker_path) if args.ranker_path else RANKER,
-                                      map_location=device, weights_only=False)["model"])
-    ranker.eval()
-    rank_w = ranker.linear.weight.detach().cpu().numpy()[0]
-    rank_b = float(ranker.linear.bias.detach().cpu().numpy()[0])
+    ranker_ckpt = torch.load(Path(args.ranker_path) if args.ranker_path else RANKER,
+                               map_location=device, weights_only=False)
+    arch = ranker_ckpt.get("arch", "linear")
+    if arch.startswith("mlp"):
+        from train_rank import RankerMLP
+        ranker = RankerMLP(hidden=int(arch.split("-")[1])).to(device)
+        ranker.load_state_dict(ranker_ckpt["model"])
+        ranker.eval()
+        w1 = ranker.fc1.weight.detach().cpu().numpy()
+        b1 = ranker.fc1.bias.detach().cpu().numpy()
+        w2 = ranker.fc2.weight.detach().cpu().numpy()[0]
+        b2 = float(ranker.fc2.bias.detach().cpu().numpy()[0])
+
+        def rank_score(left, span, right, wrong, candidate) -> float:
+            x = np.zeros(RANK_DIM, dtype=np.float64)
+            x[list(joint_ids(left, span, right, wrong, candidate))] = 1.0
+            return float(np.maximum(x @ w1.T + b1, 0.0) @ w2 + b2)
+    else:
+        ranker = Ranker().to(device)
+        ranker.load_state_dict(ranker_ckpt["model"])
+        ranker.eval()
+        rank_w = ranker.linear.weight.detach().cpu().numpy()[0]
+        rank_b = float(ranker.linear.bias.detach().cpu().numpy()[0])
+
+        def rank_score(left, span, right, wrong, candidate) -> float:
+            ids = joint_ids(left, span, right, wrong, candidate)
+            return float(rank_w[ids].sum() + rank_b)
+    print(f"[mask-pipe] ranker arch: {arch}", flush=True)
     confusion = load_confusion()
     index = load_content_index()
 
@@ -69,10 +91,6 @@ def main() -> None:
     detected = conf_ok = pipe_ok = 0
     error_items = 0
     in_top10 = 0
-
-    def rank_score(left, span, right, wrong, candidate) -> float:
-        ids = joint_ids(left, span, right, wrong, candidate)
-        return float(rank_w[ids].sum() + rank_b)
 
     with torch.no_grad():
         for item in items:

@@ -29,6 +29,22 @@ class Ranker(nn.Module):
         super().__init__()
         self.linear = nn.Linear(dim, 1)
 
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x).squeeze(-1)
+
+
+class RankerMLP(nn.Module):
+    """Two-layer selector: linear ranking has saturated (v4-v6 variance with
+    flat AUC), in-pool selection needs nonlinearity."""
+
+    def __init__(self, dim: int = RANK_DIM, hidden: int = 128):
+        super().__init__()
+        self.fc1 = nn.Linear(dim, hidden)
+        self.fc2 = nn.Linear(hidden, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.fc2(torch.relu(self.fc1(x))).squeeze(-1)
+
 
 def batch_scores(model: Ranker, ids: np.ndarray, offsets: np.ndarray, labels: np.ndarray,
                  device: str, batch: int = 4096):
@@ -43,7 +59,7 @@ def batch_scores(model: Ranker, ids: np.ndarray, offsets: np.ndarray, labels: np
                 vec = np.zeros(RANK_DIM, dtype=np.float32)
                 vec[ids[offsets[i]:ends[i]]] = 1.0
                 rows.append(vec)
-            scores = model.linear(torch.stack([torch.from_numpy(r) for r in rows]).to(device))
+            scores = model(torch.stack([torch.from_numpy(r) for r in rows]).to(device))
             out[start:start + len(rows)] = scores.cpu().numpy().ravel()
     return out
 
@@ -61,6 +77,7 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=0.5)
     parser.add_argument("--data", default="rank_train.npz")
     parser.add_argument("--out-dir", default="")
+    parser.add_argument("--mlp", type=int, default=0)
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -75,8 +92,9 @@ def main() -> None:
     cut = int(len(labels) * 0.97)
     train_idx, val_idx = perm[:cut], perm[cut:]
 
-    model = Ranker().to(device)
-    optimizer = torch.optim.AdamW(model.linear.parameters(), lr=1e-2, weight_decay=1e-4)
+    model = (RankerMLP(hidden=args.mlp) if args.mlp else Ranker()).to(device)
+    print(f"[rank] arch: {'mlp-%d' % args.mlp if args.mlp else 'linear'}", flush=True)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=1e-4)
     criterion = nn.BCEWithLogitsLoss()
     deadline = time.time() + args.minutes * 60
 
@@ -93,7 +111,7 @@ def main() -> None:
                 rows[r, ids[offsets[i]:ends[i]]] = 1.0
             model.train()
             optimizer.zero_grad()
-            logits = model.linear(torch.from_numpy(rows).to(device)).squeeze(-1)
+            logits = model(torch.from_numpy(rows).to(device))
             loss = criterion(logits, torch.from_numpy(labels[batch_idx].astype(np.float32)).to(device))
             loss.backward()
             optimizer.step()
@@ -114,7 +132,7 @@ def main() -> None:
         auc = float((ranks[labels[idx] == 1].sum() - positives * (positives - 1) / 2) / (positives * negatives))
         print(f"[rank] {name} AUC {auc:.4f}", flush=True)
 
-    torch.save({"model": model.state_dict()}, out_dir / "ranker.pt")
+    torch.save({"model": model.state_dict(), "arch": ("mlp-%d" % args.mlp) if args.mlp else "linear"}, out_dir / "ranker.pt")
     (out_dir / "metrics.json").write_text(json.dumps({"steps": step, "dim": RANK_DIM}, ensure_ascii=False, indent=2),
                                           encoding="utf-8")
     print(f"[rank] artifacts: {out_dir}", flush=True)
