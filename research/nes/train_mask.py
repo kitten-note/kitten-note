@@ -61,10 +61,37 @@ def backbone_hidden(model: MaskModel, ids: torch.Tensor) -> torch.Tensor:
     return model.backbone.enc(hidden, src_key_padding_mask=(ids == 0))
 
 
+def build_q_table(train_ids: np.ndarray, vocab_size: int, power: float = 0.75) -> np.ndarray:
+    """Unigram^0.75 proposal distribution over the training segments.
+
+    Uniform negative sampling systematically inflates frequent-token logits
+    (they are rarely sampled as negatives), which collapses full-softmax
+    top-1 while top-k survives. Sampling negatives from unigram^0.75 plus
+    logQ correction removes most of the bias (standard word2vec/Mikolov fix).
+    Special ids 0,1,2 (PAD/UNK/<S>) and the mask id get zero mass.
+    """
+    counts = np.bincount(train_ids.ravel(), minlength=vocab_size).astype(np.float64)
+    counts[:3] = 0.0
+    counts[-1] = 0.0  # <MASK> is the last id
+    powered = np.power(counts, power)
+    total = powered.sum()
+    if total <= 0:
+        powered[:] = 1.0
+        powered[:3] = 0.0
+        powered[-1] = 0.0
+        total = powered.sum()
+    return (powered / total).astype(np.float64)
+
+
 def sampled_loss(model: MaskModel, masked: torch.Tensor, targets: torch.Tensor,
-                 n_neg: int = 512) -> torch.Tensor:
+                 n_neg: int = 512, q_table: torch.Tensor | None = None) -> torch.Tensor:
     """Full backbone forward, but the 15k head only on masked positions with
-    sampled negatives (full softmax would cost ~94B MACs per batch)."""
+    sampled negatives (full softmax would cost ~94B MACs per batch).
+
+    With q_table (unigram proposal): negatives come from the proposal and
+    all sampled logits get the logQ correction, which fixes the top-1
+    collapse caused by uniform sampling.
+    """
     device = masked.device
     hidden = backbone_hidden(model, masked)
     valid = targets != -100
@@ -74,10 +101,18 @@ def sampled_loss(model: MaskModel, masked: torch.Tensor, targets: torch.Tensor,
     if count == 0:
         return (model.mlm.weight.sum() * 0.0 + model.mlm.bias.sum() * 0.0)
     vocab_size = model.mlm.out_features
-    neg = torch.randint(3, vocab_size - 1, (n_neg,), device=device)
-    cand = torch.cat([tm.unsqueeze(1), neg.unsqueeze(0).expand(count, -1)], dim=1)
-    weights = model.mlm.weight[cand]              # [M, 1+n, d]
-    scores = (hm.unsqueeze(1) * weights).sum(-1) + model.mlm.bias[cand]
+    if q_table is None:
+        neg = torch.randint(3, vocab_size - 1, (n_neg,), device=device)
+        cand = torch.cat([tm.unsqueeze(1), neg.unsqueeze(0).expand(count, -1)], dim=1)
+        weights = model.mlm.weight[cand]              # [M, 1+n, d]
+        scores = (hm.unsqueeze(1) * weights).sum(-1) + model.mlm.bias[cand]
+    else:
+        neg = torch.multinomial(q_table, n_neg, replacement=True)
+        cand = torch.cat([tm.unsqueeze(1), neg.unsqueeze(0).expand(count, -1)], dim=1)
+        weights = model.mlm.weight[cand]
+        scores = (hm.unsqueeze(1) * weights).sum(-1) + model.mlm.bias[cand]
+        q_log = torch.log(q_table[cand].clamp(min=1e-12))
+        scores = scores - q_log
     return torch.nn.functional.cross_entropy(scores, torch.zeros(count, dtype=torch.long, device=device))
 
 
@@ -180,9 +215,11 @@ def main() -> None:
     parser.add_argument("--preset", default="S")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--out-dir", default="")
+    parser.add_argument("--sampling", default="uniform", choices=["uniform", "unigram"])
+    parser.add_argument("--device", default="auto")
     args = parser.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     out_dir = Path(args.out_dir) if args.out_dir else ART
     out_dir.mkdir(parents=True, exist_ok=True)
     vocab = json.loads((MASK_DIR / "vocab.json").read_text(encoding="utf-8"))
@@ -203,8 +240,11 @@ def main() -> None:
         print(f"[mask] resumed at step {step}", flush=True)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-2)
-    criterion = nn.CrossEntropyLoss(ignore_index=-100)
     rng = np.random.default_rng(20261008)
+    q_table = None
+    if args.sampling == "unigram":
+        q_table = torch.tensor(build_q_table(train, len(stoi)), dtype=torch.float32, device=device)
+        print(f"[mask] unigram proposal built over {len(stoi)} ids", flush=True)
     deadline = time.time() + args.minutes * 60
     started = time.time()
     last_ckpt = started
@@ -220,7 +260,8 @@ def main() -> None:
             model.train()
             optimizer.zero_grad()
             loss = sampled_loss(model, torch.from_numpy(masked).to(device),
-                                torch.from_numpy(targets.astype(np.int64)).to(device))
+                                torch.from_numpy(targets.astype(np.int64)).to(device),
+                                q_table=q_table)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
