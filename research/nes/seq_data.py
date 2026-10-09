@@ -36,6 +36,7 @@ from synth import Synthesizer  # noqa: E402
 
 SEQ_DIR = BASE / "data" / "seq"
 REV_PAIRS = BASE / "data" / "external" / "rev_pairs.jsonl"
+HARDNEG_ENC = BASE / "data" / "hardneg_enc.jsonl"
 CSC_TRAIN = BASE / "data" / "external" / "shibing624__CSC" / "train.json"
 CSC_DEV = BASE / "data" / "external" / "shibing624__CSC" / "dev.json"
 
@@ -280,6 +281,21 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     csc_items = load_csc_labeled(CSC_TRAIN)
     print(f"[seq] real CSC typo segments: {len(csc_items)}", flush=True)
     edited.extend(csc_items)
+
+    hardneg = []
+    if HARDNEG_ENC.exists():
+        with HARDNEG_ENC.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                try:
+                    text = json.loads(line).get("text", "")
+                except Exception:  # noqa: BLE001
+                    continue
+                if 24 <= len(text) <= MAXLEN - 1:
+                    hardneg.append((text, np.zeros(len(text) + 1, dtype=np.int8)))
+                if len(hardneg) >= 15000:
+                    break
+    print(f"[seq] hard-negative clean segments: {len(hardneg)}", flush=True)
+    clean.extend(hardneg)
 
     rng = np.random.default_rng(seed)
     edited_ids = rng.permutation(len(edited))
