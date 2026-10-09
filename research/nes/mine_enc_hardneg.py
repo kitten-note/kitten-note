@@ -4,7 +4,7 @@ the best blind detector; segments where it fires confidently (>=6.0) with
 no true edit within +-8 gaps become extra clean training segments
 (upsampled). Directly attacks the 36-42% clean-fire rate.
 
-Usage: python mine_enc_hardneg.py [--segments 20000] [--cap 12000]
+Usage: python mine_enc_hardneg.py [--segments 20000] [--cap 12000] [--fire 6.0]
 Writes: data/hardneg_enc.jsonl (one raw text per line)
 """
 from __future__ import annotations
@@ -26,7 +26,6 @@ from demo_enc import edit_logodds, load_model  # noqa: E402
 ENC = BASE / "artifacts" / "enc-s-csc" / "model.pt"
 SEQ = BASE / "data" / "seq"
 OUT = BASE / "data" / "hardneg_enc.jsonl"
-FIRE = 6.0
 EXCLUDE = 8
 
 
@@ -40,6 +39,7 @@ def main() -> None:
     parser.add_argument("--segments", type=int, default=20000)
     parser.add_argument("--cap", type=int, default=12000)
     parser.add_argument("--minutes", type=float, default=15.0)
+    parser.add_argument("--fire", type=float, default=6.0)
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -69,7 +69,7 @@ def main() -> None:
                     order = np.argsort(-scores)
                     edits = set(np.argwhere(train_labels[start + b][:length] != 0).ravel().tolist())
                     for gap in order[:3]:
-                        if scores[gap] < FIRE:
+                        if scores[gap] < args.fire:
                             break
                         if any(abs(int(gap) - e) <= EXCLUDE for e in edits):
                             continue
