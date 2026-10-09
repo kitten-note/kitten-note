@@ -215,7 +215,7 @@ def main() -> None:
     parser.add_argument("--preset", default="S")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--out-dir", default="")
-    parser.add_argument("--sampling", default="uniform", choices=["uniform", "unigram"])
+    parser.add_argument("--sampling", default="unigram", choices=["uniform", "unigram"])
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
 
