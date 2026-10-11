@@ -144,7 +144,16 @@ def main() -> None:
     parser.add_argument("--focal-gamma", type=float, default=2.0)
     parser.add_argument("--init-from", default="")
     parser.add_argument("--out-dir", default="")
+    parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+
+    if args.seed:
+        import random
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        print(f"[enc] fixed seed {args.seed} (init)", flush=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     out_dir = Path(args.out_dir) if args.out_dir else BASE / "artifacts" / f"enc-{args.preset.lower()}"
@@ -195,7 +204,7 @@ def main() -> None:
     print(f"[enc] loss: {args.loss}", flush=True)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-2)
-    rng = np.random.default_rng(20261007)
+    rng = np.random.default_rng(args.seed or 20261007)
     deadline = time.time() + args.minutes * 60
     step = 0
     started = time.time()
@@ -221,7 +230,7 @@ def main() -> None:
             optimizer.step()
             step += 1
             if step % 100 == 0:
-                print(f"[enc] epoch {epoch} step {step} loss {float(loss):.4f}", flush=True)
+                print(f"[enc] epoch {epoch} step {step} loss {float(loss.detach()):.4f}", flush=True)
 
     print(f"[enc] done: {step} steps in {(time.time() - started) / 60:.1f} min", flush=True)
     torch.save({"model": model.state_dict(), "preset": args.preset, "step": step},

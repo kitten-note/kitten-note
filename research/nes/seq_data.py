@@ -215,7 +215,7 @@ def load_csc_labeled(path: Path, cap: int = 300_000) -> List:
 
 
 def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 20261007,
-          short_n: int = 2) -> Dict:
+          short_n: int = 2, no_hardneg: bool = False) -> Dict:
     SEQ_DIR.mkdir(parents=True, exist_ok=True)
     lines = load_lines()
     print(f"[seq] text lines: {len(lines)}", flush=True)
@@ -283,7 +283,7 @@ def build(max_segments: int = 60_000, minutes: float = 20.0, seed: int = 2026100
     edited.extend(csc_items)
 
     hardneg = []
-    if HARDNEG_ENC.exists():
+    if not no_hardneg and HARDNEG_ENC.exists():
         with HARDNEG_ENC.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 try:
@@ -343,5 +343,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--short-n", type=int, default=2)
     parser.add_argument("--max-segments", type=int, default=60_000)
-    build(max_segments=parser.parse_args().max_segments,
-          short_n=parser.parse_args().short_n)
+    parser.add_argument("--no-hardneg", action="store_true")
+    parser.add_argument("--seed", type=int, default=20261007)
+    parsed = parser.parse_args()
+    build(max_segments=parsed.max_segments, short_n=parsed.short_n,
+          no_hardneg=parsed.no_hardneg, seed=parsed.seed)
