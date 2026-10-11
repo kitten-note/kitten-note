@@ -1,0 +1,73 @@
+{
+  "n": 1100,
+  "error_items": 550,
+  "fired_rate": 0.45454545454545453,
+  "detection_rate": 0.18181818181818182,
+  "correction_rate": 0.016363636363636365,
+  "clean_items": 550,
+  "clean_fire_rate": 0.3709090909090909,
+  "threshold": 4.0,
+  "note": "confusion table frozen; a few entries added after live probes (disclosed)",
+  "miss_examples": [
+    {
+      "wrong": "坐路差不多十分钟，我们到了。",
+      "correct": "走路差不多十分钟，我们到了。",
+      "fired_pos": 0,
+      "payload": "做"
+    },
+    {
+      "wrong": "到电影院前面，他们一定先要买票在可以进去。",
+      "correct": "到电影院前面，他们一定先要买票才可以进去。",
+      "fired_pos": 13,
+      "payload": "卖"
+    },
+    {
+      "wrong": "他们见面的时候，台生很高兴，应为外面真么那么热。",
+      "correct": "他们见面的时候，台生很高兴，因为外面怎么那么热。",
+      "fired_pos": 18,
+      "payload": "正"
+    },
+    {
+      "wrong": "他带他的黑色的包，也他的照像机。",
+      "correct": "他带他的黑色的包，也他的照相机。",
+      "fired_pos": 13,
+      "payload": "向"
+    },
+    {
+      "wrong": "它是真的一个很好的人。",
+      "correct": "他是真的一个很好的人。",
+      "fired_pos": 2,
+      "payload": "正"
+    },
+    {
+      "wrong": "我带来一个地图可是我看不动，也不知道教师在哪里。",
+      "correct": "我带来一个地图可是我看不懂，也不知道教室在哪里。",
+      "fired_pos": 21,
+      "payload": "那"
+    },
+    {
+      "wrong": "她回国以后，男朋友就把他拍的像片寄给她。",
+      "correct": "她回国以后，男朋友就把他拍的相片寄给她。",
+      "fired_pos": 14,
+      "payload": "向"
+    },
+    {
+      "wrong": "他们用电脑一边看那些像片一边聊天。",
+      "correct": "他们用电脑一边看那些相片一边聊天。",
+      "fired_pos": 10,
+      "payload": "向"
+    },
+    {
+      "wrong": "晚上时他跟她的男朋友用电脑聊天。",
+      "correct": "晚上时她跟她的男朋友用电脑聊天。",
+      "fired_pos": 4,
+      "payload": "根"
+    },
+    {
+      "wrong": "现在我在台北西个半月了，周末的时候我跟同学练习中文还有一起去看电影。",
+      "correct": "现在我在台北七个半月了，周末的时候我跟同学练习中文还有一起去看电影。",
+      "fired_pos": 13,
+      "payload": "抹"
+    }
+  ]
+}
