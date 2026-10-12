@@ -21,8 +21,8 @@
  * Handles offline caching and PWA functionality
  */
 
-const SHELL_CACHE = 'kitten-note-shell-v9';
-const RUNTIME_CACHE = 'kitten-note-runtime-v9';
+const SHELL_CACHE = 'kitten-note-shell-v10';
+const RUNTIME_CACHE = 'kitten-note-runtime-v10';
 
 // Core shell assets precached on install.
 // Individual failures are tolerated by the per-asset allSettled below.

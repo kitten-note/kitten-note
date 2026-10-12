@@ -24,7 +24,7 @@
 import { OPFSBlockStorage } from './opfs-storage.js';
 
 const DB_NAME = 'KittenNoteDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const IMPORT_BATCH_SIZE = 100;
 const IMPORT_FINALIZE_TIMEOUT_MS = 45000;
 
@@ -115,6 +115,14 @@ export class Database {
                     const tombstoneStore = db.createObjectStore('tombstones', { keyPath: 'id' });
                     tombstoneStore.createIndex('deletedAt', 'deletedAt', { unique: false });
                     tombstoneStore.createIndex('type', 'type', { unique: false });
+                }
+
+                // NES feedback events (local-only suggestion accept/dismiss log;
+                // future training ingestion: accepted events are (context, atom) pairs)
+                if (!db.objectStoreNames.contains('nesEvents')) {
+                    const nesEventsStore = db.createObjectStore('nesEvents', { keyPath: 'id', autoIncrement: true });
+                    nesEventsStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    nesEventsStore.createIndex('action', 'action', { unique: false });
                 }
             };
         });

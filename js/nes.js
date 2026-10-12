@@ -319,6 +319,7 @@ export class NESManager {
             if (this.mode === 'api') {
                 const limitedBefore = textBefore.slice(-400);
                 const limitedAfter = textAfter.slice(0, 200);
+                this.setFeedbackContext(limitedBefore);
                 const suggestion = await this.runApiInference(limitedBefore, limitedAfter, requestId);
                 if (requestId !== this.currentInferenceId) return;
 
@@ -347,6 +348,7 @@ export class NESManager {
 
     runLocalInference(textBefore, textAfter, requestId) {
         const document = textBefore + textAfter;
+        this.setFeedbackContext(textBefore);
         const started = performance.now();
         const details = this.engine.suggestDetailed(document, textBefore.length, { maxResults: 1 });
         const elapsed = performance.now() - started;
@@ -525,6 +527,11 @@ export class NESManager {
         if (!this.currentSuggestion) return;
 
         this.app.textEditor?.showSuggestion(this.currentSuggestion);
+        this.logFeedback('shown', {
+            mode: 'api',
+            className: 'COMPLETION',
+            target: String(this.currentSuggestion).slice(0, 20),
+        });
 
         const acceptBtn = document.getElementById('nes-accept-btn');
         if (acceptBtn && this.currentSuggestion) {
@@ -556,11 +563,18 @@ export class NESManager {
     }
 
     dismissSuggestion() {
+        const had = !!(this.editSuggestion || this.currentSuggestion);
+        const skipLog = this._justAccepted;
+        this._justAccepted = false;
         this.currentSuggestion = null;
         this.editSuggestion = null;
         this.app.textEditor?.hideSuggestion();
         this.suggestionCard?.classList.add('hidden');
         this.setStatus('idle');
+
+        if (had && !skipLog) {
+            this.logFeedback('dismissed', {});
+        }
 
         const acceptBtn = document.getElementById('nes-accept-btn');
         acceptBtn?.classList.add('hidden');
@@ -579,14 +593,90 @@ export class NESManager {
             this.app.logger?.info(
                 `I applied a NES suggestion: ${this.editSuggestion.description} (${applied ? 'ok' : 'failed'}).`
             );
+            this.logFeedback('accepted', {
+                mode: 'local',
+                className: this.editSuggestion.className,
+                pos: this.editSuggestion.pos,
+                target: this.editSuggestion.description,
+                score: this.editSuggestion.editProbability,
+            });
+            this._justAccepted = true;
             this.dismissSuggestion();
             return;
         }
 
         if (!this.currentSuggestion) return;
 
+        this.logFeedback('accepted', {
+            mode: 'api',
+            className: 'COMPLETION',
+            target: String(this.currentSuggestion).slice(0, 20),
+        });
+        this._justAccepted = true;
         this.app.textEditor?.acceptSuggestion(this.currentSuggestion);
         this.dismissSuggestion();
+    }
+
+    setFeedbackContext(contextBefore) {
+        this._lastContext = String(contextBefore || '').slice(-40);
+    }
+
+    feedbackEnabled() {
+        return !!this.app.settingsManager?.settings?.nesFeedback;
+    }
+
+    async logFeedback(action, extra = {}) {
+        try {
+            if (!this.feedbackEnabled() || !this.app.db) return;
+            const event = {
+                timestamp: Date.now(),
+                mode: this.mode,
+                engine: this.engineName || '',
+                action,
+                contextBefore: this._lastContext || '',
+                className: extra.className || '',
+                pos: extra.pos ?? -1,
+                target: extra.target || '',
+                score: extra.score ?? 0,
+            };
+            if (extra.mode) event.mode = extra.mode;
+            await this.app.db.add('nesEvents', event);
+            // Cap the log at 2000 events (drop oldest).
+            const all = await this.app.db.getAll('nesEvents');
+            if (all.length > 2000) {
+                const excess = all.slice(0, all.length - 2000);
+                for (const entry of excess) {
+                    await this.app.db.delete('nesEvents', entry.id);
+                }
+            }
+        } catch (error) {
+            console.warn('[NES] feedback log failed:', error);
+        }
+    }
+
+    async exportFeedback() {
+        try {
+            const events = await this.app.db.getAll('nesEvents');
+            if (!events.length) {
+                Toast.warning('暂无反馈数据');
+                return;
+            }
+            const lines = events.map((e) => JSON.stringify(e)).join('\n');
+            const blob = new Blob([lines], { type: 'application/jsonl' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            const date = new Date().toISOString().slice(0, 10);
+            link.download = `nes-feedback-${date}.jsonl`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            Toast.success(`已导出 ${events.length} 条反馈`);
+        } catch (error) {
+            console.error('[NES] feedback export failed:', error);
+            Toast.error('导出失败');
+        }
     }
 
     setStatus(state, detail = '') {

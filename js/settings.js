@@ -38,6 +38,7 @@ export class SettingsManager {
             preset: null,
             nesDelay: 800,
             nesEnabled: false,
+            nesFeedback: false,
             logOverlayEnabled: false,
             nesBackend: 'cpu',
             nesMode: 'local',
@@ -253,6 +254,12 @@ export class SettingsManager {
 
         this.app.nesManager?.setBackend(this.settings.nesBackend || 'cpu');
         
+        // NES feedback toggle state
+        const nesFeedbackToggle = document.getElementById('nes-feedback-toggle');
+        if (nesFeedbackToggle) {
+            nesFeedbackToggle.checked = !!this.settings.nesFeedback;
+        }
+
         // NES mode settings
         // Migrate stale API-mode configs (no URL/key) to the built-in predictor.
         if (this.settings.nesMode === 'api' && (!this.settings.nesApiUrl || !this.settings.nesApiKey)) {
