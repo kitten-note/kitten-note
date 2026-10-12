@@ -46,10 +46,11 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=4.0)
     parser.add_argument("--ranker-path", default="")
     parser.add_argument("--topk", type=int, default=10)
+    parser.add_argument("--enc-path", default="")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    enc, enc_stoi, enc_maxlen = load_enc(device, ENC)
+    enc, enc_stoi, enc_maxlen = load_enc(device, Path(args.enc_path) if args.enc_path else ENC)
     mask_vocab = json.loads(MASK_VOCAB.read_text(encoding="utf-8"))
     mask_stoi, mask_maxlen, mask_id = (mask_vocab["stoi"], mask_vocab["maxlen"], mask_vocab["mask_id"])
     mask_itos = {v: k for k, v in mask_stoi.items()}

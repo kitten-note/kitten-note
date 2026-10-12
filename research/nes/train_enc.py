@@ -49,6 +49,27 @@ class FocalLoss(torch.nn.Module):
         return (-alpha * (1.0 - true_p).pow(self.gamma) * true_logp).mean()
 
 
+def rank_loss(logits: torch.Tensor, valid: torch.Tensor, is_edit: torch.Tensor) -> torch.Tensor:
+    """Multi-instance ranking loss: probability mass of the edit score on
+    true edit gaps (averaged over segments that contain edits).
+
+    Our metric IS ranking (top-k gaps); per-position CE is only a proxy.
+    This term optimizes ranking directly.
+    """
+    edit = logits[..., 1:]
+    m = edit.max(dim=-1, keepdim=True).values
+    logodds = (m + (edit - m).exp().sum(dim=-1, keepdim=True).log()).squeeze(-1) - logits[..., 0]
+    logodds = logodds.masked_fill(~valid, float("-inf"))
+    lse_all = torch.logsumexp(logodds, dim=1)
+    masked_true = torch.where(is_edit & valid, logodds,
+                              torch.tensor(float("-inf"), device=logits.device))
+    lse_true = torch.logsumexp(masked_true, dim=1)
+    has_edit = (is_edit & valid).any(dim=1)
+    if not has_edit.any():
+        return logits.sum() * 0.0
+    return -(lse_true - lse_all)[has_edit].mean()
+
+
 def position_metrics(model, device, ids_all: np.ndarray, labels_all: np.ndarray,
                      max_batches: int = 40) -> dict:
     model.eval()
@@ -145,6 +166,7 @@ def main() -> None:
     parser.add_argument("--init-from", default="")
     parser.add_argument("--out-dir", default="")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--rank-weight", type=float, default=0.0)
     args = parser.parse_args()
 
     if args.seed:
@@ -225,6 +247,10 @@ def main() -> None:
             optimizer.zero_grad()
             logits = model(ids_t)
             loss = criterion(logits.reshape(-1, 7), targets_t.reshape(-1))
+            if args.rank_weight > 0:
+                valid = targets_t != -100
+                is_edit = targets_t > 0
+                loss = loss + args.rank_weight * rank_loss(logits, valid, is_edit)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()

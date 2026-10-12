@@ -1,0 +1,73 @@
+{
+  "n": 1100,
+  "error_items": 550,
+  "fired_rate": 0.5509090909090909,
+  "detection_rate": 0.2381818181818182,
+  "correction_rate": 0.034545454545454546,
+  "clean_items": 550,
+  "clean_fire_rate": 0.4509090909090909,
+  "threshold": 3.0,
+  "note": "confusion table frozen; a few entries added after live probes (disclosed)",
+  "miss_examples": [
+    {
+      "wrong": "他带他的黑色的包，也他的照像机。",
+      "correct": "他带他的黑色的包，也他的照相机。",
+      "fired_pos": 13,
+      "payload": "向"
+    },
+    {
+      "wrong": "你们也可以走路也可以做公共汽车。",
+      "correct": "你们也可以走路也可以坐公共汽车。",
+      "fired_pos": 10,
+      "payload": "作"
+    },
+    {
+      "wrong": "我带来一个地图可是我看不动，也不知道教师在哪里。",
+      "correct": "我带来一个地图可是我看不懂，也不知道教室在哪里。",
+      "fired_pos": 21,
+      "payload": "那"
+    },
+    {
+      "wrong": "她回国以后，男朋友就把他拍的像片寄给她。",
+      "correct": "她回国以后，男朋友就把他拍的相片寄给她。",
+      "fired_pos": 14,
+      "payload": "向"
+    },
+    {
+      "wrong": "他们用电脑一边看那些像片一边聊天。",
+      "correct": "他们用电脑一边看那些相片一边聊天。",
+      "fired_pos": 10,
+      "payload": "向"
+    },
+    {
+      "wrong": "李伟很会拍照片，所以他派了很多照片。",
+      "correct": "李伟很会拍照片，所以他拍了很多照片。",
+      "fired_pos": 10,
+      "payload": "她"
+    },
+    {
+      "wrong": "昨天晚上李大明根其他的朋友去夜店跳舞喝酒。",
+      "correct": "昨天晚上李大明跟其他的朋友去夜店跳舞喝酒。",
+      "fired_pos": 9,
+      "payload": "她"
+    },
+    {
+      "wrong": "不好意思！我不可以去，因为我很忙这个月很少修息，下次我们一起持分号码？",
+      "correct": "不好意思！我不可以去，因为我很忙这个月很少休息，下次我们一起吃饭好吗？",
+      "fired_pos": 33,
+      "payload": "马"
+    },
+    {
+      "wrong": "过了不久，他们不再根我联络了。",
+      "correct": "过了不久，他们不再跟我联络了。",
+      "fired_pos": 8,
+      "payload": "在"
+    },
+    {
+      "wrong": "我所有跟他们的谈心呢，该不该他们以把它传给别人了。",
+      "correct": "我所有跟他们的谈心呢，该不该他们已把它传给别人了。",
+      "fired_pos": 18,
+      "payload": "他"
+    }
+  ]
+}
